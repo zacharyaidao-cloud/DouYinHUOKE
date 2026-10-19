@@ -83,50 +83,61 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
       rows = require('./lead-query').filterLeads(rows, videos, options.filters, { settings, now });
     }
     const allocations = store.getAllocations();
-    // 分发只执行私信。19 条里只有 5 条能发时，必须能说清另外 14 条为什么被排除，
-    // 否则界面只会显示“可联系候选 5 人”，看起来像丢数据。
+    // 分发执行「关注 + 私信」：关注或私信任一符合条件即可入池，逐条记录需要哪些动作。
     const excluded = new Map();
     const bump = (reason, count = 1) => excluded.set(reason, (excluded.get(reason) || 0) + count);
     const selected = [];
+    const needs = new Map();
     for (const lead of rows) {
       if (String(lead.businessId || settings.outreach.businessId || 'default') !== workflow.businessId(settings)) { bump('不属于当前业务'); continue; }
-      const eligibility = workflow.eligibility(lead, 'dm', history, settings, now, videos);
-      if (!eligibility.ok) { bump(eligibility.reason || '不符合私信条件'); continue; }
+      const followEligibility = workflow.eligibility(lead, 'follow', history, settings, now, videos);
+      const dmEligibility = workflow.eligibility(lead, 'dm', history, settings, now, videos);
+      if (!followEligibility.ok && !dmEligibility.ok) { bump(dmEligibility.reason || followEligibility.reason || '不符合联系条件'); continue; }
       const entry = allocations[workflow.contactKey(lead, settings)];
       // 过期分配锁不再生效；否则一次中断会让这些用户被永久排除。
       if (entry && entry.consumed !== true && !workflow.allocationExpired(entry, now) && String(entry.accountId)) { bump('已分配给其他账号执行'); continue; }
       selected.push(lead);
+      needs.set(String(lead.id), { follow: followEligibility.ok, dm: dmEligibility.ok });
     }
     const unique = workflow.uniqueContacts(selected, settings);
     if (unique.length < selected.length) bump('同一用户重复评论', selected.length - unique.length);
     unique.sort((a, b) => String(b.time || '').localeCompare(String(a.time || '')));
-    return { rows: unique, excluded: [...excluded.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => ({ reason, count })), sourceRows: rows.length, duplicateRows: selected.length - unique.length };
+    return { rows: unique, needs, excluded: [...excluded.entries()].sort((a, b) => b[1] - a[1]).map(([reason, count]) => ({ reason, count })), sourceRows: rows.length, duplicateRows: selected.length - unique.length };
   }
 
-  function allocateLeads(pool, unassigned, settings, state, opDay) {
+  function allocateLeads(pool, unassigned, settings, state, opDay, needs) {
     const blocks = {};
     const usage = {};
     for (const item of pool) {
       const accountId = String(item.accountId);
       const u = store.getDailyUsage(accountId);
+      const quota = workflow.getQuotas(settings, u);
       const cap = estimateCap(state[accountId]);
-      const setLimit = Math.max(0, Number(settings.dm.dailyLimit) || 0);
+      const dmLimit = Math.max(0, Number(settings.dm.dailyLimit) || 0);
       const capRemaining = settings.dm.adaptiveCap !== false && cap.value > 0 ? Math.max(0, cap.value - Math.max(0, Number(u.dm) || 0)) : Infinity;
-      usage[accountId] = { remaining: Math.min(setLimit - Math.max(Number(u.dm) || 0, Number(u.dmAttempts) || 0), capRemaining), perVideo: {} };
+      usage[accountId] = {
+        follow: Math.max(0, Number(quota.follow.remaining) || 0),
+        dm: Math.min(dmLimit - Math.max(Number(u.dm) || 0, Number(u.dmAttempts) || 0), capRemaining),
+        profile: Math.max(0, Number(quota.profile.remaining) || 0),
+        perVideo: {}
+      };
       blocks[accountId] = [];
     }
     const leftovers = [];
     const sameVideoLimit = Math.max(1, Number(settings.dm.sameVideoPerBatch) || 2);
     for (const lead of unassigned) {
       const videoKey = String(lead.videoLink || '');
+      const need = (needs && needs.get(String(lead.id))) || { follow: false, dm: true };
       let best = null, fallback = null;
       for (const item of pool) {
         const accountId = String(item.accountId);
         if (blocked(state, accountId, Date.now()).blocked) continue;
         const u = usage[accountId];
-        if (u.remaining <= 0) continue;
+        if (u.profile <= 0) continue;
+        if (need.follow && u.follow <= 0) continue;
+        if (need.dm && u.dm <= 0) continue;
         const sameVideo = u.perVideo[videoKey] || 0;
-        const score = { remaining: u.remaining, sameVideo };
+        const score = { remaining: u.profile, sameVideo };
         const better = other => !other || score.remaining > other.score.remaining || score.remaining === other.score.remaining && score.sameVideo < other.score.sameVideo;
         if (better(fallback)) fallback = { accountId, score };
         if (sameVideo >= sameVideoLimit) continue;
@@ -136,7 +147,9 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
       const chosen = best || fallback;
       if (!chosen) { leftovers.push(lead); continue; }
       blocks[chosen.accountId].push(lead);
-      usage[chosen.accountId].remaining--;
+      usage[chosen.accountId].profile--;
+      if (need.follow) usage[chosen.accountId].follow--;
+      if (need.dm) usage[chosen.accountId].dm--;
       usage[chosen.accountId].perVideo[videoKey] = (usage[chosen.accountId].perVideo[videoKey] || 0) + 1;
     }
     return { blocks, leftovers };
@@ -178,7 +191,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     const state = readState(opDay, now);
     const summary = {
       runId, status: 'running', totalCandidates: 0, perAccount: {}, unassigned: 0,
-      done: 0, success: 0, pending: 0, failed: 0, skipped: 0, stopReason: '', sameIpWarning: sameIpGroups
+      done: 0, success: 0, followCount: 0, pending: 0, failed: 0, skipped: 0, stopReason: '', sameIpWarning: sameIpGroups
     };
     const publish = patch => { Object.assign(summary, patch); setTask({ kind: 'dm_distribution', distributionSummary: { ...summary } }); };
     setTask({ kind: 'dm_distribution', distributionActive: true, running: true, accountId: String(pool[0].accountId), stage: 'allocating',
@@ -186,6 +199,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     try {
       const candidateResult = candidates(settings, input || {});
       let unassigned = candidateResult.rows;
+      const needs = candidateResult.needs;
       summary.excluded = candidateResult.excluded;
       summary.totalCandidates = unassigned.length;
       const allocations = store.getAllocations();
@@ -194,11 +208,11 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
         if (!entry || entry.consumed === true || workflow.allocationExpired(entry, now)) delete allocations[key];
       }
       const allocateNow = () => {
-        const { blocks, leftovers } = allocateLeads(pool, unassigned, settings, state, opDay);
+        const { blocks, leftovers } = allocateLeads(pool, unassigned, settings, state, opDay, needs);
         const expiresAt = Date.now() + workflow.ALLOCATION_TTL_MS;
         for (const [accountId, leads] of Object.entries(blocks)) {
           for (const lead of leads) {
-            allocations[workflow.contactKey(lead, settings)] = { accountId, kind: 'dm', plannedAt: store.nowStr(), expiresAt, consumed: false };
+            allocations[workflow.contactKey(lead, settings)] = { accountId, kind: 'outreach', plannedAt: store.nowStr(), expiresAt, consumed: false };
           }
         }
         store.setAllocations(allocations);
@@ -237,8 +251,8 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
           setTask({ stage: 'running_batch', status: `账号 ${(accounts.find(a => String(a.id) === accountId) || {}).name || accountId} 正在执行一批 ${batch.length} 人`, done: summary.done, total: summary.totalCandidates, currentLead: null });
           let result;
           try {
-            const plan = createPlan(accountId, 'outreach', { follow: false, dm: true, leadIds: batch.map(l => String(l.id)), crossAccount: true, dmTemplate: item.template, owner: 'distribution' });
-            result = await runOutreach(accountId, { planId: plan.id, follow: false, dm: true });
+            const plan = createPlan(accountId, 'outreach', { follow: true, dm: true, leadIds: batch.map(l => String(l.id)), crossAccount: true, dmTemplate: item.template, owner: 'distribution' });
+            result = await runOutreach(accountId, { planId: plan.id, follow: true, dm: true });
           } catch (error) {
             if (error instanceof TaskStopError) throw error;
             result = { ok: false, error: error.message, errorCode: error.code || '' };
@@ -254,11 +268,12 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
             store.setAllocations(allocations);
             summary.done += batch.length;
             summary.success += Number(result.dmCount) || 0;
+            summary.followCount = (Number(summary.followCount) || 0) + (Number(result.followCount) || 0);
             summary.pending += Number(result.pendingCount) || 0;
             summary.failed += Number(result.failedCount) || 0;
             summary.skipped += Number(result.skipped) || 0;
             if (summary.perAccount[accountId]) summary.perAccount[accountId].success += Number(result.dmCount) || 0;
-            store.log(accountId, `私信分发：本批 ${batch.length} 人完成（成功 ${result.dmCount}｜待核验 ${result.pendingCount}｜失败 ${result.failedCount}｜跳过 ${result.skipped}）`);
+            store.log(accountId, `分发执行：本批 ${batch.length} 人完成（关注 ${result.followCount}｜私信成功 ${result.dmCount}｜待核验 ${result.pendingCount}｜失败 ${result.failedCount}｜跳过 ${result.skipped}）`);
           } else if (signal === 'daily_limit') {
             markDailyLimit(state, accountId, settings, opDay);
             store.setDmAccountState(state);
@@ -308,7 +323,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
       publish({ completedAt: store.nowStr() });
       checkpoint({ state: 'completed', stopReason: summary.stopReason, distributionSummary: { ...summary } });
       setTask({ kind: 'dm_distribution', distributionActive: false, running: false, stage: 'distribution_done',
-        status: summary.stopReason || `私信分发结束：覆盖 ${summary.done} 人｜确认成功 ${summary.success}｜待核验 ${summary.pending}｜失败 ${summary.failed}｜待分配 ${remaining}`,
+        status: summary.stopReason || `分发结束：覆盖 ${summary.done} 人｜关注 ${summary.followCount}｜私信成功 ${summary.success}｜待核验 ${summary.pending}｜失败 ${summary.failed}｜待分配 ${remaining}`,
         detail: sameIpGroups.length ? '警告：以下账号共用同一 IP，建议一账号一代理：' + sameIpGroups.map(g => g.join('/')).join('；') : '' });
       return { ok: true, runId, ...summary };
     } catch (error) {
@@ -338,8 +353,8 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     if (!pool.length) throw new Error('请至少选择一个私信账户');
     const opDay = store.opDayStr();
     const state = readState(opDay, Date.now());
-    const { rows, excluded, sourceRows, duplicateRows } = candidates(settings, input || {});
-    const { blocks, leftovers } = allocateLeads(pool, rows, settings, state, opDay);
+    const { rows, needs, excluded, sourceRows, duplicateRows } = candidates(settings, input || {});
+    const { blocks, leftovers } = allocateLeads(pool, rows, settings, state, opDay, needs);
     const perAccount = pool.map(item => {
       const accountId = String(item.accountId);
       const usage = store.getDailyUsage(accountId);

@@ -35,8 +35,7 @@ function aiCategory(lead, videos = {}, options = {}) {
     || lead.aiScore != null && lead.aiScore !== '';
   return historical ? 'ai_stale' : 'ai_todo';
 }
-// 采集账号与执行账号解耦：关注历史全局共享，任意账号的关注都视为“已关注”。
-function ownsFollowHistory(lead) { return true; }
+function ownsFollowHistory(lead) { return String(lead.followAttemptAccountId || lead.accountId || '') === String(lead.accountId || ''); }
 function actionState(lead, kind) {
   if (kind === 'follow' && !ownsFollowHistory(lead)) return '';
   return lead[kind + 'State'] || lead[kind + 'Outcome']
@@ -48,7 +47,7 @@ function hasSentHistory(lead) {
 }
 function hasFollowHistory(lead) {
   return ownsFollowHistory(lead) && (lead.followedAt || lead.followState === 'confirmed_success' || lead.followOutcome === 'confirmed_success' || ['followed', 'followed_dm'].includes(lead.status))
-    || lead.followObserved && lead.followObserved.state === 'following';
+    || lead.followObserved && lead.followObserved.state === 'following' && !!lead.accountId && String(lead.followObserved.accountId) === String(lead.accountId);
 }
 function contactCategory(lead) {
   if (lead.doNotContact || lead.status === 'do_not_contact' || lead.noDm && lead.noDmConfirmed) return 'blocked';

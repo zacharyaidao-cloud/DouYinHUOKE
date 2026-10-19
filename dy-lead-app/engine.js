@@ -398,6 +398,7 @@ function saveLeadAction(lead, kind, settings = store.getSettings()) {
     : ['dmCount', 'dmLastAt', 'dmSentAt', 'noDm', 'noDmConfirmed', 'dmFailedReason', 'dmState', 'dmOutcome', 'dmAttemptAt', 'dmAttemptId', 'dmAttemptAccountId', 'dmEvidence', 'dmMessageHash'];
   for (const current of all) {
     if (workflow.contactKey(current, settings) !== workflow.contactKey(lead, settings)) continue;
+    if (kind === 'follow' && String(current.accountId) !== String(lead.accountId)) continue;
     for (const field of fields) if (Object.hasOwn(lead, field)) {
       if (lead[field] === undefined) delete current[field];
       else current[field] = lead[field];

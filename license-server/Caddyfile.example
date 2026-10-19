@@ -1,0 +1,6 @@
+# 替换为实际授权域名；DNS 需指向服务器。Caddy 自动签发并续期正式证书。
+license.example.com {
+    encode gzip
+    reverse_proxy 127.0.0.1:17889
+    header Strict-Transport-Security "max-age=31536000"
+}

@@ -1,0 +1,153 @@
+:root {
+  --red: #fe2c55;
+  --red-dark: #d61e44;
+  --bg: #f7f7f9;
+  --card: #ffffff;
+  --text: #1f2329;
+  --muted: #7a818d;
+  --border: #e6e8ec;
+  --ok: #0aa06e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 460px;
+  max-height: 600px;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+  font-size: 13px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #1f2329, #2c313a);
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header .logo { width: 34px; height: 34px; border-radius: 8px; }
+header h1 { font-size: 15px; font-weight: 600; }
+header .subtitle { font-size: 11px; color: #b9bfc9; margin-top: 2px; }
+
+.card {
+  background: var(--card);
+  margin: 10px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.card-title { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+
+label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+
+input[type="text"], input[type="number"], textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fcfcfd;
+  color: var(--text);
+}
+input:focus, textarea:focus { outline: none; border-color: var(--red); }
+textarea { resize: vertical; }
+
+.adv { margin-top: 10px; }
+.adv summary { cursor: pointer; color: var(--muted); font-size: 12px; user-select: none; }
+.adv-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.adv-row label { margin: 0; flex: 1; }
+.adv-row input { width: 90px; }
+
+.btn-row { display: flex; gap: 8px; margin-top: 12px; }
+.btn-row.wrap { flex-wrap: wrap; }
+button {
+  flex: 1;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--red); color: #fff; }
+button.primary:not(:disabled):hover { background: var(--red-dark); }
+button.normal { background: #eef0f3; color: var(--text); }
+button.normal:not(:disabled):hover { background: #e2e5ea; }
+button.danger { background: #5a616c; color: #fff; }
+button.danger:not(:disabled):hover { background: #464b54; }
+button.danger.ghost { background: transparent; color: #c22; border: 1px solid #e5b7b7; flex: 0 0 auto; }
+button.danger.ghost:not(:disabled):hover { background: #fdf0f0; }
+
+.status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f2f4f7;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.status.ok { background: #e9f7f0; color: var(--ok); }
+.status.err { background: #fdeeee; color: #c22; }
+
+.debug { margin-top: 6px; font-size: 11px; color: #999; white-space: pre-wrap; word-break: break-all; }
+
+.diag {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #1f2329;
+  color: #9fd3a8;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.badge {
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: normal;
+}
+
+.table-wrap { max-height: 220px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th {
+  position: sticky; top: 0;
+  background: #f2f4f7;
+  text-align: left;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+tbody td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+tbody tr:hover { background: #fafbfc; }
+.empty { text-align: center; color: #b0b6bf; padding: 20px 10px; font-size: 12px; }
+
+footer { padding: 10px 14px 14px; color: #a5abb4; font-size: 11px; line-height: 1.6; }
+
+.hidden { display: none !important; }

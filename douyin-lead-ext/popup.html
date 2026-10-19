@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>抖音获客采集助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon48.png" alt="" class="logo">
+    <div class="title-wrap">
+      <h1>抖音获客采集助手</h1>
+      <div class="subtitle">评论采集 · 意向过滤 · 导出 Excel</div>
+    </div>
+  </header>
+
+  <!-- 采集设置 -->
+  <section class="card">
+    <div class="card-title">1️⃣ 采集设置</div>
+
+    <label>视频链接</label>
+    <input id="videoUrl" type="text" placeholder="粘贴抖音视频链接，如 https://www.douyin.com/video/7693378601286309625">
+
+    <label>意向关键词（命中即标记为意向客户，逗号/空格分隔）</label>
+    <textarea id="keywords" rows="2" placeholder="多少钱, 怎么, 联系, 价格, 费用…"></textarea>
+
+    <label>采集主题（写入 Excel「关键词」列，可不填）</label>
+    <input id="topic" type="text" placeholder="例如：亚马逊账号申诉多少钱">
+
+    <details class="adv">
+      <summary>高级设置</summary>
+      <div class="adv-row">
+        <label>滚动间隔（秒）</label>
+        <input id="scrollInterval" type="number" min="1" max="30" step="1">
+      </div>
+      <div class="adv-row">
+        <label>连续无新增评论几轮后停止</label>
+        <input id="maxIdleRounds" type="number" min="2" max="20" step="1">
+      </div>
+    </details>
+
+    <div class="btn-row">
+      <button id="btnStart" class="primary">▶ 开始采集</button>
+      <button id="btnStop" class="danger" disabled>■ 停止</button>
+      <button id="btnDiag" class="normal" style="flex:0 0 auto">🔧 自检</button>
+    </div>
+    <div id="status" class="status">就绪</div>
+    <pre id="diag" class="diag hidden"></pre>
+    <div id="debugInfo" class="debug hidden"></div>
+  </section>
+
+  <!-- 线索库 -->
+  <section class="card">
+    <div class="card-title">
+      2️⃣ 线索库
+      <span id="totalBadge" class="badge">0 条</span>
+    </div>
+    <div class="btn-row wrap">
+      <button id="btnEnrich" class="normal">👤 补全主页资料</button>
+      <button id="btnExport" class="primary">📥 导出 Excel</button>
+      <button id="btnCsv" class="normal">导出 CSV</button>
+      <button id="btnClear" class="danger ghost">清空</button>
+    </div>
+    <div id="enrichStatus" class="status hidden"></div>
+    <div class="table-wrap">
+      <table id="leadTable">
+        <thead>
+          <tr>
+            <th>昵称</th>
+            <th>评论内容</th>
+            <th>时间</th>
+            <th>属地</th>
+            <th>抖音号</th>
+          </tr>
+        </thead>
+        <tbody id="leadBody"></tbody>
+      </table>
+      <div id="emptyTip" class="empty">还没有线索。打开抖音视频页点击「开始采集」。</div>
+    </div>
+  </section>
+
+  <footer>
+    数据仅保存在本机浏览器。采集频率过高可能触发抖音风控，请勿滥用。<br>
+    插件版本 <span id="footerVer">-</span> ｜ 排查问题时，把视频页 F12 控制台里带 <b>[dy-lead]</b> 的日志发给我
+  </footer>
+
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

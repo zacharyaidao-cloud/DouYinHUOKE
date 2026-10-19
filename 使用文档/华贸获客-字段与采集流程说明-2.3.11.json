@@ -1,0 +1,1786 @@
+{
+  "title": "华贸获客字段字典与采集来源",
+  "applicationVersion": "2.3.11",
+  "generatedAt": "2026-10-11T06:45:09.451Z",
+  "schemaVersion": 3,
+  "dataFormat": "本机 JSON 记录；compactColumns 定义紧凑主表，原字段 registry 保留读取投影、详情与 Excel 全字段",
+  "publicLeadFields": {
+    "version": 3,
+    "groups": [
+      {
+        "id": "primary",
+        "label": "主要字段"
+      },
+      {
+        "id": "basic",
+        "label": "基础信息"
+      },
+      {
+        "id": "work",
+        "label": "视频/图文"
+      },
+      {
+        "id": "comment",
+        "label": "评论信息"
+      },
+      {
+        "id": "user",
+        "label": "用户信息"
+      }
+    ],
+    "fields": [
+      {
+        "key": "id",
+        "label": "编号",
+        "group": "primary",
+        "sourceGroup": "basic",
+        "type": "number",
+        "width": 100,
+        "defaultVisible": true,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "time",
+        "label": "评论时间",
+        "group": "primary",
+        "sourceGroup": "comment",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": true,
+        "sourceField": "comments[].create_time",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "UID",
+        "label": "UID",
+        "group": "primary",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 200,
+        "defaultVisible": true,
+        "sourceField": "comments[].user.uid / profile.user.uid",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "nickname",
+        "label": "用户名称",
+        "group": "primary",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 180,
+        "defaultVisible": true,
+        "sourceField": "comments[].user.nickname / profile.user.nickname",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "aiNeed",
+        "label": "AI判断",
+        "group": "primary",
+        "sourceGroup": "basic",
+        "type": "ai",
+        "width": 120,
+        "defaultVisible": true,
+        "sourceField": "DeepSeek JSON.need → aiNeed，只允许是/否；是表示业务相关、可考虑联系",
+        "sourcePathField": ""
+      },
+      {
+        "key": "aiScore",
+        "label": "AI评分",
+        "group": "primary",
+        "sourceGroup": "basic",
+        "type": "number",
+        "width": 110,
+        "defaultVisible": true,
+        "sourceField": "旧版 JSON.score 历史兼容字段；新判断置空，旧评分重判前归档 aiScoreHistory，不参与执行许可",
+        "sourcePathField": ""
+      },
+      {
+        "key": "aiReason",
+        "label": "AI理由",
+        "group": "primary",
+        "sourceGroup": "basic",
+        "type": "longtext",
+        "width": 200,
+        "defaultVisible": true,
+        "sourceField": "DeepSeek JSON.reason → aiReason；新判断1至30字符，旧版长理由保留全文",
+        "sourcePathField": ""
+      },
+      {
+        "key": "trigger",
+        "label": "触发词",
+        "group": "primary",
+        "sourceGroup": "basic",
+        "type": "text",
+        "width": 160,
+        "defaultVisible": true,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "demand",
+        "label": "需求内容",
+        "group": "primary",
+        "sourceGroup": "comment",
+        "type": "longtext",
+        "width": 360,
+        "defaultVisible": true,
+        "sourceField": "comments[].text",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "videoDesc",
+        "label": "视频描述",
+        "group": "primary",
+        "sourceGroup": "work",
+        "type": "longtext",
+        "width": 420,
+        "defaultVisible": true,
+        "sourceField": "真实标题＋完整正文＋不同 caption（去重）",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "homepage",
+        "label": "主页链接",
+        "group": "primary",
+        "sourceGroup": "user",
+        "type": "url",
+        "width": 250,
+        "defaultVisible": true,
+        "sourceField": "comments[].user.sec_uid 生成公开主页链接",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "accountId",
+        "label": "执行账号ID",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "text",
+        "width": 180,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "businessId",
+        "label": "业务编号",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "text",
+        "width": 160,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "fetchTime",
+        "label": "获取时间",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "intent",
+        "label": "关键词候选",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "text",
+        "width": 130,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "status",
+        "label": "状态",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "status",
+        "width": 150,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "followState",
+        "label": "关注结果",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "status",
+        "width": 160,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "dmState",
+        "label": "私信结果",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "status",
+        "width": 160,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "followedAt",
+        "label": "关注时间",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "dmLastAt",
+        "label": "私信时间",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "dmCount",
+        "label": "私信次数",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "aiJudgedAt",
+        "label": "AI判断时间",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "aiPromptVersion",
+        "label": "AI规则版本",
+        "group": "basic",
+        "sourceGroup": "basic",
+        "type": "text",
+        "width": 230,
+        "defaultVisible": false,
+        "sourceField": "本机生成",
+        "sourcePathField": ""
+      },
+      {
+        "key": "workId",
+        "label": "作品ID",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "text",
+        "width": 220,
+        "defaultVisible": false,
+        "sourceField": "aweme_id / awemeId",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "videoLink",
+        "label": "视频链接",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "url",
+        "width": 260,
+        "defaultVisible": false,
+        "sourceField": "公开 video/note 作品链接",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workType",
+        "label": "作品类型",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "text",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "实际 aweme_type=68 / 公开作品路径 /note/；否则有效 video 路径",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "awemeType",
+        "label": "平台作品类型",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "aweme_type / awemeType",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workTitle",
+        "label": "作品标题",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "longtext",
+        "width": 300,
+        "defaultVisible": false,
+        "sourceField": "item_title / itemTitle",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workContent",
+        "label": "作品正文",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "longtext",
+        "width": 420,
+        "defaultVisible": false,
+        "sourceField": "desc（缺失时 caption）",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "caption",
+        "label": "作品补充文案",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "longtext",
+        "width": 320,
+        "defaultVisible": false,
+        "sourceField": "caption",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workTextState",
+        "label": "描述获取状态",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "status",
+        "width": 150,
+        "defaultVisible": false,
+        "sourceField": "由真实文字字段是否返回推导",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workTextSource",
+        "label": "描述数据来源",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "text",
+        "width": 170,
+        "defaultVisible": false,
+        "sourceField": "api / page_json / page_dom / history",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "descriptionReason",
+        "label": "描述说明",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "longtext",
+        "width": 300,
+        "defaultVisible": false,
+        "sourceField": "本机识别说明",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workTextChars",
+        "label": "作品文字数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 130,
+        "defaultVisible": false,
+        "sourceField": "综合作品全文字符数",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "imageCount",
+        "label": "图片数量",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "images.length / image_post_info.images.length",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "diggCountWork",
+        "label": "点赞数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "statistics.digg_count",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "commentCount",
+        "label": "评论数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "statistics.comment_count",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "shareCount",
+        "label": "分享数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "statistics.share_count",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "collectCount",
+        "label": "收藏数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "statistics.collect_count",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "authorNickname",
+        "label": "作者",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "text",
+        "width": 180,
+        "defaultVisible": false,
+        "sourceField": "author.nickname",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "authorFollowerCount",
+        "label": "作者粉丝数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "author.follower_count",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "createTime",
+        "label": "视频发布时间",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "create_time",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "durationSec",
+        "label": "视频时长(秒)",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 150,
+        "defaultVisible": false,
+        "sourceField": "duration 毫秒换算秒",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "capturedAt",
+        "label": "视频数据获取时间",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机接收有效作品响应时间",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "lastCollectAt",
+        "label": "上次采集时间",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机作品采集记录 lastCollectAt",
+        "sourcePathField": ""
+      },
+      {
+        "key": "scanCount",
+        "label": "采集次数",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "本机作品采集记录 scanCount",
+        "sourcePathField": ""
+      },
+      {
+        "key": "workSourcePath",
+        "label": "作品响应路径",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "text",
+        "width": 350,
+        "defaultVisible": false,
+        "sourceField": "实际响应 pathname / 当前作品 pathname",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "workCapturedAt",
+        "label": "作品来源记录时间",
+        "group": "work",
+        "sourceGroup": "work",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机接收有效作品来源时间",
+        "sourcePathField": "workSourcePath"
+      },
+      {
+        "key": "commentId",
+        "label": "评论ID",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "text",
+        "width": 220,
+        "defaultVisible": false,
+        "sourceField": "comments[].cid",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "commentTimestamp",
+        "label": "评论时间戳（秒）",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "number",
+        "width": 180,
+        "defaultVisible": false,
+        "sourceField": "comments[].create_time，Unix秒",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "commentLevel",
+        "label": "评论等级",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "number",
+        "width": 130,
+        "defaultVisible": false,
+        "sourceField": "comments[].level",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "region",
+        "label": "属地",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "text",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "comments[].ip_label",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "diggCount",
+        "label": "评论点赞数",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "number",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "comments[].digg_count",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "replyCount",
+        "label": "评论回复数",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "number",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "comments[].reply_comment_total",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "commentSourcePath",
+        "label": "评论响应路径",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "text",
+        "width": 350,
+        "defaultVisible": false,
+        "sourceField": "实际响应 pathname",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "commentCapturedAt",
+        "label": "评论来源记录时间",
+        "group": "comment",
+        "sourceGroup": "comment",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机接收评论响应时间",
+        "sourcePathField": "commentSourcePath"
+      },
+      {
+        "key": "uid",
+        "label": "uid",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 260,
+        "defaultVisible": false,
+        "sourceField": "comments[].user.sec_uid / profile.user.sec_uid",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "account",
+        "label": "账号",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 180,
+        "defaultVisible": false,
+        "sourceField": "user.unique_id",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "signature",
+        "label": "个性签名",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "longtext",
+        "width": 330,
+        "defaultVisible": false,
+        "sourceField": "user.signature",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "followerCount",
+        "label": "粉丝数",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "user.follower_count",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "followingCount",
+        "label": "关注数",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "user.following_count",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "favoritedCount",
+        "label": "获赞数",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "user.total_favorited",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "awemeCount",
+        "label": "作品数",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 120,
+        "defaultVisible": false,
+        "sourceField": "user.aweme_count",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "gender",
+        "label": "性别",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 100,
+        "defaultVisible": false,
+        "sourceField": "user.gender",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "province",
+        "label": "省份",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "user.province",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "city",
+        "label": "城市",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "user.city",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "verify",
+        "label": "认证",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 230,
+        "defaultVisible": false,
+        "sourceField": "user.enterprise_verify_reason / user.custom_verify",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "school",
+        "label": "学校",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 210,
+        "defaultVisible": false,
+        "sourceField": "user.school_name",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "age",
+        "label": "年龄",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 100,
+        "defaultVisible": false,
+        "sourceField": "user.user_age",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "commerceLevel",
+        "label": "电商等级",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "number",
+        "width": 130,
+        "defaultVisible": false,
+        "sourceField": "user.commerce_user_level",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "ipLocation",
+        "label": "IP属地",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "user.ip_location",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "liveStatus",
+        "label": "直播状态",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 140,
+        "defaultVisible": false,
+        "sourceField": "user.live_status",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "certInfo",
+        "label": "认证明细",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "longtext",
+        "width": 320,
+        "defaultVisible": false,
+        "sourceField": "user.account_cert_info.name",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "userSourcePath",
+        "label": "用户资料响应路径",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 350,
+        "defaultVisible": false,
+        "sourceField": "最近实际返回 comments[].user 或 profile.user 的响应 pathname；逐字段来源在 userFieldSources",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "userCapturedAt",
+        "label": "用户资料来源时间",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机最近接收 comments[].user 或 profile.user 时间",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "profileSourcePath",
+        "label": "主页补充响应路径",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "text",
+        "width": 350,
+        "defaultVisible": false,
+        "sourceField": "实际主页资料响应 pathname",
+        "sourcePathField": "userSourcePath"
+      },
+      {
+        "key": "profileCapturedAt",
+        "label": "主页补充时间",
+        "group": "user",
+        "sourceGroup": "user",
+        "type": "date",
+        "width": 190,
+        "defaultVisible": false,
+        "sourceField": "本机接收主页资料时间",
+        "sourcePathField": "userSourcePath"
+      }
+    ],
+    "compactColumns": [
+      {
+        "key": "id",
+        "label": "编号",
+        "className": "lead-check-cell",
+        "width": 66,
+        "fields": [
+          "id"
+        ]
+      },
+      {
+        "key": "nickname",
+        "label": "用户",
+        "className": "col-nick",
+        "width": 124,
+        "fields": [
+          "nickname",
+          "homepage"
+        ]
+      },
+      {
+        "key": "time",
+        "label": "评论时间",
+        "className": "lead-date",
+        "width": 124,
+        "fields": [
+          "time"
+        ]
+      },
+      {
+        "key": "demand",
+        "label": "用户评论",
+        "className": "lead-comment",
+        "width": 270,
+        "fields": [
+          "demand"
+        ]
+      },
+      {
+        "key": "videoDesc",
+        "label": "作品标题 / 内容",
+        "className": "lead-work",
+        "width": 260,
+        "fields": [
+          "videoDesc",
+          "workTitle",
+          "workContent",
+          "workType"
+        ]
+      },
+      {
+        "key": "aiNeed",
+        "label": "AI 判断 / 理由",
+        "className": "lead-ai",
+        "width": 156,
+        "fields": [
+          "aiNeed",
+          "aiReason"
+        ]
+      },
+      {
+        "key": "contact",
+        "label": "联系结果",
+        "className": "lead-contact",
+        "width": 124,
+        "fields": [
+          "followState",
+          "dmState"
+        ]
+      }
+    ]
+  },
+  "sourceEndpoints": {
+    "work": [
+      {
+        "path": "/aweme/v1/web/aweme/detail/",
+        "description": "浏览器作品详情响应；备用是当前 /video/{作品ID} 或 /note/{作品ID} 页内 JSON / 流式 JSON / 明确作品文字。"
+      }
+    ],
+    "comment": [
+      {
+        "path": "/aweme/v1/web/comment/list/",
+        "description": "目标作品的一级评论响应；以作品 ID、cursor、评论 ID 和 has_more 核验分页进度。"
+      }
+    ],
+    "user": [
+      {
+        "path": "/aweme/v1/web/comment/list/",
+        "description": "comments[].user 中已经返回的用户公开资料，无需再访问其主页。"
+      },
+      {
+        "path": "/aweme/v1/web/user/profile/other/",
+        "description": "人工查看或触达时同一次主页访问已经返回的 user，按 sec_uid 匹配回填。"
+      }
+    ],
+    "basic": [
+      {
+        "path": "本机任务与配置",
+        "description": "编号、执行账号、业务编号、筛选、触达结果、判断版本与处理时间。"
+      },
+      {
+        "path": "/chat/completions",
+        "origin": "https://api.deepseek.com",
+        "description": "DeepSeek 返回 i、need、reason；按编号核验后 need→aiNeed，reason→aiReason。旧 score 保留历史，新判不生成评分。"
+      },
+      {
+        "path": "/models",
+        "origin": "https://api.deepseek.com",
+        "description": "实时读取可用模型、context_window（输入＋输出）及 max_output_tokens，自动组批计入完整规则与结果预留。"
+      }
+    ]
+  },
+  "defaults": {
+    "collect": {
+      "dailyVideoLimit": 240,
+      "maxScrolls": 120,
+      "scrollIntervalSec": 3,
+      "scrollJitter": 0.4,
+      "linkIntervalSec": 10,
+      "linkIntervalJitter": 0.2,
+      "cooldownHours": 24,
+      "skipEmptyText": true,
+      "autoAiAfterCollect": true
+    },
+    "follow": {
+      "enabled": true,
+      "dailyLimit": 150
+    },
+    "dm": {
+      "enabled": true,
+      "dailyLimit": 150,
+      "skipAuthor": true,
+      "repeatEnabled": false,
+      "repeatIntervalDays": 7
+    },
+    "action": {
+      "userIntervalSec": 30,
+      "userIntervalJitter": 0.4,
+      "pacingVersion": 1
+    },
+    "human": {
+      "maxConsecutiveErrors": 3,
+      "timeZone": "Asia/Shanghai"
+    },
+    "ai": {
+      "model": "deepseek-flash",
+      "apiKeyConfigured": false,
+      "requestTimeoutSec": 60,
+      "batchMode": "auto",
+      "batchMaxChars": 24000,
+      "batchMaxCount": 20,
+      "activePromptId": "prompt-1",
+      "presetCount": 3,
+      "browserIntervalApplies": false
+    },
+    "keywords": {
+      "intent": [
+        "协议三",
+        "协议3",
+        "申诉",
+        "申述",
+        "激活",
+        "解封",
+        "解冻",
+        "恢复",
+        "重启",
+        "盘活",
+        "封店",
+        "封号",
+        "被封",
+        "停用",
+        "冻结",
+        "侵权",
+        "关联",
+        "不适当库存",
+        "库存调查",
+        "描述不符",
+        "重复链接",
+        "重复创建",
+        "视频验证",
+        "视频审核",
+        "视频没通过",
+        "视频不过",
+        "法人",
+        "提现",
+        "站内信",
+        "一刷",
+        "二刷",
+        "欺诈",
+        "店铺不存在",
+        "店铺点进去显示不存在",
+        "asin",
+        "多少钱",
+        "多少米",
+        "多钱",
+        "多少",
+        "价格",
+        "收费",
+        "费用",
+        "报价",
+        "先付款",
+        "成功后付款",
+        "怎么联系",
+        "联系方式",
+        "联系我",
+        "私我",
+        "帮我看",
+        "我需要",
+        "我也是",
+        "我跟你一模一样",
+        "怎么弄",
+        "怎么整",
+        "怎么操作",
+        "怎么解决",
+        "怎么处理",
+        "怎么办",
+        "如何申诉",
+        "可以吗",
+        "能不能",
+        "真的吗",
+        "真的假的",
+        "真假",
+        "有得救",
+        "能救",
+        "能整",
+        "能搞",
+        "能解"
+      ],
+      "exclude": []
+    },
+    "business": {
+      "businessDesc": "我们提供亚马逊账号申诉、激活、解封、资金解冻服务",
+      "targetCustomers": "遇到亚马逊账户停用、申诉、激活或资金问题的卖家，以及询问处理办法、服务费用、联系方式或真实性的用户（含代朋友咨询）",
+      "clearNeeds": "评论者描述本人或朋友当前相关问题，或向服务方询问处理办法、能否处理、费用、联系方式、服务真实性；具体账户问题作品下主动说“我也是、同样收到、跟你一样、就是这个情况”已指向自身问题，判是，不要求再写怎么办，也不要求明确购买或写“我的店”",
+      "misjudgments": "作者求助不能直接移植给评论者，但评论主动表示本人或朋友遇到同样当前问题则判是；仅回答作者、提供能力案例、转介绍、纯评价和既往经验无新问题或咨询判否。业务相关、未拒绝、无法证明同行不足以判是；理由不猜同行、不编造本人问题细节"
+    }
+  },
+  "embeddedBrowser": {
+    "runtime": "Electron WebContentsView",
+    "desktopDefault": false,
+    "modeSetting": "accounts[].browserMode",
+    "defaultMode": "external",
+    "availableModes": [
+      "external",
+      "embedded"
+    ],
+    "observer": "Playwright 继续观察当前账号页面自身请求与响应，动作仍使用目标页原生控件",
+    "switching": "账号管理下拉选择模式；PUT /api/accounts/:id 的 browserMode 仅接受 external/embedded。运行任务或手动网页导航时拒绝切换；关闭原账号上下文成功后保存选择并将登录状态置为待确认，失败保留原模式。同一任务槽保护切换，停止入口保持可用。两种模式分别保存资料，均不删除或转换。",
+    "entry": "账号管理 POST /api/accounts/:id/open 打开登录；账号浏览器标签只切换已经打开的账号，不绕过后端启动和授权流程",
+    "navigation": "账号标签、只读网址、后退、前进、刷新和返回工作台；普通状态刷新不抢走当前工作页，明确打开请求才切至账号浏览器",
+    "visibility": "页面切换、弹窗和登录遮罩时隐藏视图，隐藏不等于退出账号或停止任务；视图边界不覆盖全局停止按钮",
+    "storage": {
+      "current": "data/electron-profiles",
+      "legacy": "data/chrome-profiles",
+      "perAccount": true,
+      "oldProfilesPreserved": true,
+      "autoMigrateChromeLogin": false
+    },
+    "migration": "保留API Key、设置、账号列表、线索、联系记录及原数据目录；旧chrome-profiles不删除不转换；独立内核下每个账号首次需要重新扫码，不必删除或重建账号",
+    "bridge": "桌面主进程承载账号WebContentsView；后台经进程IPC和带随机会话凭据的本机回环WebSocket适配Playwright，不开放无鉴权的remote-debugging-port；网页没有Node或桌面管理IPC权限",
+    "protocolSessions": "生产host支持Playwright newCDPSession(page)所需的独立页面CDP会话，仍只允许当前账号的target及所属会话；独立会话按父会话和代次绑定，分离时不影响主页面会话，也不能附着到另一账号",
+    "navigationInterception": "collection-browser通过独立会话的Fetch.requestPaused在主框架Document请求和响应阶段逐跳核对允许的HTTPS域名、GET导航、授权及停止；限制跳数，校验Location后在同页继续。停止或异常先终止挂起请求再释放会话，不以兼容CDP为由扩大导航权限",
+    "renderingLease": {
+      "reason": "隔离复现中隐藏账号页的输入框聚焦后可降至约1fps，即使backgroundThrottling关闭也可能拖慢真实控件就绪",
+      "methods": [
+        "Runtime.callFunctionOn",
+        "DOM.scrollIntoViewIfNeeded",
+        "Input.*"
+      ],
+      "mechanism": "上述CDP命令存续期间，按当前账号引用计数持有beginFrameSubscription(true, 空回调)；重叠命令共用订阅，正常完成或异常在finally释放，账号关闭也释放，最后一个持有者退出时endFrameSubscription",
+      "images": "空回调丢弃帧图像，不保存、不记录、不向后台或远端转发图像；仅当前账号WebContents，不采集整个桌面",
+      "idle": "命令之间没有常驻帧订阅或采样；保留原页面requestAnimationFrame与输入事件，不改任务等待间隔，不额外重试click",
+      "validationBoundary": "隔离验证覆盖隐藏视图、聚焦后空闲再点击、并发命令及异常/关闭释放；隐藏测试不等同于已完成所有系统的最小化完整流程验证，也不证明真实平台全部布局或发送均通过"
+    },
+    "manualNavigation": "后退、前进、刷新先同步占用短期控制租约，再异步检查授权和任务空闲；任务启动与手动导航互斥。授权返回后再次核对账号及会话代次，完成或失败释放本次租约，超时释放；不会将过期许可用于新账号页面",
+    "shutdown": "正常关闭主窗口先中止后台任务，等待账号session的storage与cookies flush完成，再销毁账号视图和主窗口；后台退出有超时兜底，关闭中不会先销毁待保存页面",
+    "compatibility": "桌面默认外部专用浏览器，缺少browserMode的旧账号也按external处理；优先系统Chrome，其次Edge，再使用随安装包的Chromium。外部模式复用data/chrome-profiles，内嵌模式使用data/electron-profiles，双方不混用。选择embedded但桥接不可用会明确报错，不悄悄换模式",
+    "dependencies": {
+      "ws": "8.22.0"
+    },
+    "validation": "内嵌host、生产响应client、隔离页面和桌面集成smoke验证；不以隔离验证宣称真实平台发送成功，也不表示所有实网布局已验证"
+  },
+  "leadList": {
+    "compact": {
+      "columns": [
+        {
+          "key": "id",
+          "label": "编号",
+          "className": "lead-check-cell",
+          "width": 66,
+          "fields": [
+            "id"
+          ]
+        },
+        {
+          "key": "nickname",
+          "label": "用户",
+          "className": "col-nick",
+          "width": 124,
+          "fields": [
+            "nickname",
+            "homepage"
+          ]
+        },
+        {
+          "key": "time",
+          "label": "评论时间",
+          "className": "lead-date",
+          "width": 124,
+          "fields": [
+            "time"
+          ]
+        },
+        {
+          "key": "demand",
+          "label": "用户评论",
+          "className": "lead-comment",
+          "width": 270,
+          "fields": [
+            "demand"
+          ]
+        },
+        {
+          "key": "videoDesc",
+          "label": "作品标题 / 内容",
+          "className": "lead-work",
+          "width": 260,
+          "fields": [
+            "videoDesc",
+            "workTitle",
+            "workContent",
+            "workType"
+          ]
+        },
+        {
+          "key": "aiNeed",
+          "label": "AI 判断 / 理由",
+          "className": "lead-ai",
+          "width": 156,
+          "fields": [
+            "aiNeed",
+            "aiReason"
+          ]
+        },
+        {
+          "key": "contact",
+          "label": "联系结果",
+          "className": "lead-contact",
+          "width": 124,
+          "fields": [
+            "followState",
+            "dmState"
+          ]
+        }
+      ],
+      "fontPx": 15,
+      "summaryLines": 2,
+      "commentThenWork": true,
+      "timeDisplay": "日期和时间分两行",
+      "homepage": "隐藏原 URL，使用复制按钮",
+      "details": "保留完整评论、作品全文、原始字段、单条 AI 与联系核验等操作；主表不放查看作品按钮"
+    },
+    "aiFilters": {
+      "all": "全部",
+      "ai_todo": "未判断",
+      "ai_yes": "AI 是（当前有效）",
+      "ai_no": "AI 否（当前有效）",
+      "ai_stale": "待重判（历史或失效结果）"
+    },
+    "contactFilters": {
+      "all": "全部状态",
+      "new": "暂无联系记录",
+      "followed": "有关注记录",
+      "sent": "已有私信记录",
+      "pending": "待核验",
+      "failed": "操作失败",
+      "blocked": "不再联系",
+      "replied": "已回复"
+    },
+    "classification": "AI 与联系状态分别筛选；有效性复用 aiDone、是/否、短理由、aiPromptVersion 与 aiInputHash。待核验不算已发送；当前有效 AI 是仍须通过任务预检查",
+    "counts": "AI 分类计数保留搜索、评论时间、联系状态等其它条件，只忽略当前 AI 分类；完整筛选总数不受页面显示条数限制",
+    "commentTime": {
+      "choices": [
+        0,
+        1,
+        3,
+        7
+      ],
+      "hours": [
+        0,
+        24,
+        72,
+        168
+      ],
+      "source": "commentTimestamp 保存 comments[].create_time 的原始 Unix 秒；筛选换算为毫秒",
+      "legacy": "缺少原始秒时兼容历史 time；无时区的历史日期按 +08:00 解析；非法、未知或未来时间不进入近期范围",
+      "freeze": "预检查开始筛选时冻结截止时间，沿用固定名单，不因等待或翻页改变本次范围",
+      "identity": "按当前线索主评论的 ID 与对应时间筛选，不把同一用户其它评论的时间拼到主评论上"
+    },
+    "selection": "切换筛选保留已勾选编号；已勾选范围可能包含当前页面未显示的线索",
+    "export": {
+      "scopes": {
+        "filters": "当前完整筛选结果",
+        "selected": "已勾选编号，忽略当前筛选；空选择拒绝导出",
+        "all": "全部线索和全部作品（含无评论作品）"
+      },
+      "format": "保留原全字段、历史评分与完整长文本，不随紧凑主表删列",
+      "works": "当前筛选和已勾选只附带本次导出线索关联的作品；全部及旧 GET 包含全部作品，包括无评论作品",
+      "endpoint": "POST /api/export，JSON {filters,leadIds?,scope?}；旧 GET /api/export 保留全量线索兼容"
+    }
+  },
+  "longText": {
+    "rawStorage": "workRawText",
+    "normalizedTitle": "workTitle",
+    "normalizedContent": "workContent",
+    "fullDisplayText": "workText / fieldValues.videoDesc",
+    "aiMaxContextChars": 12000,
+    "aiStrategy": "实际标题＋正文开头及末尾；省略中间时附明确标记和原文摘要校验",
+    "excel": {
+      "maxCellChars": 32767,
+      "maxCellLineFeeds": 253,
+      "segmentChars": 30000,
+      "segmentLineFeeds": 250
+    }
+  },
+  "servers": {
+    "authorization": "https://huamao.xyz/dy-license/",
+    "administration": "https://huamao.xyz/dy-license/manage/",
+    "ai": "https://api.deepseek.com",
+    "localService": "http://127.0.0.1:<动态端口>",
+    "defaultInstallDir": "D:\\华贸自媒体获客",
+    "defaultDataDir": "D:\\华贸自媒体获客\\data"
+  },
+  "installedStatusAtReview": {
+    "snapshotOfRelease": "2.3.11",
+    "reviewedOn": null,
+    "version": null,
+    "updated": null,
+    "reason": "生成器不核验客户安装版本，也不执行安装；请以当前客户端和实际升级验证记录为准。"
+  },
+  "workflow": {
+    "stages": [
+      "账号就绪",
+      "采集评论",
+      "AI 与名单",
+      "关注与私信",
+      "结果核验"
+    ],
+    "pacing": {
+      "commentScroll": {
+        "baseSec": 3,
+        "jitter": 0.4,
+        "startsAfter": "首屏评论就绪，以及每次真实翻页完成"
+      },
+      "nextWork": {
+        "baseSec": 10,
+        "jitter": 0.2,
+        "startsAfter": "当前实际访问作品结束"
+      },
+      "nextUser": {
+        "baseSec": 30,
+        "jitter": 0.4,
+        "startsAfter": "当前实际访问用户处理结束"
+      },
+      "sameProfileDelay": 0,
+      "independentDeadlines": true,
+      "responseWaitOverlapsPacing": true,
+      "controls": "设置页面集中管理三组节奏；页面、控件与目标响应仍做有限时就绪检查"
+    },
+    "autoAi": {
+      "enabledByDefault": true,
+      "owner": "服务端采集任务串接，页面轮询不启动任务",
+      "scope": "本次实际评论响应涉及的线索，包括旧记录回填；排除作品作者与空主评论，不按关键词提前筛除；当前有效结果跳过",
+      "stopOrCollectionError": "保留已采集数据，不自动启动AI",
+      "missingAiConfig": "采集数据仍保存，提示完成设置后手动判断本次范围",
+      "result": "显示采集汇总、AI状态与是/否/失败数量，进入本次评论用户筛选"
+    },
+    "outreach": {
+      "precheck": "计划schema 3冻结执行账号、去重用户名单、逐人动作、话术模板和消息预览，以及重复私信开关和至少1天的间隔；旧计划或重复规则改变须重建",
+      "contactPolicy": {
+        "repeat": {
+          "enabled": false,
+          "intervalDays": 7
+        },
+        "historyUnknown": "allow_initial"
+      },
+      "sequence": [
+        "用户主页",
+        "核对当前关系并按需关注",
+        "打开目标私信",
+        "需要时从列表进入目标对话",
+        "检查可读私信历史",
+        "填写冻结消息",
+        "点击发送",
+        "记录结果"
+      ],
+      "stageGroups": {
+        "selecting_conversation": "opening_dm",
+        "checking_dm_history": "opening_dm"
+      },
+      "followRelation": "本次主页响应已关注则跳过关注，不计本次成功或尝试；旧followedAt不阻止重新核对现场关系。关注记录和待核验只约束实际执行账号，不用另一账号的已关注替代当前关系",
+      "dmHistory": "确认目标对话后，被动核对网页自然产生的历史请求与响应、本人发送者和目标会话；可读且确认的历史出站文字包含手动发送。明确已有私信与当前业务同UID的本地跨账号历史共同防重，不重放接口或主动翻历史页。初次最多1.5秒等待结束后继续监听，在准备及发送前复核迟到响应；整体监听最多30秒，在本次发送前冻结，不新增固定间隔。另在已核验目标聊天中识别本人旧消息及空状态栏，排除失败、发送中和未知状态；聊天就绪与最终发送前复核DOM，只保存正向历史，未加载内容仍可能未知",
+      "repeatPolicy": "已有私信按预检查冻结的repeat.enabled和intervalDays判断；关闭则跳过，开启仍须有可靠最近发送时间且满足至少1天的间隔。最近时间未知禁止自动重复；本地待核验始终禁止重发",
+      "unknownHistory": "按用户确认策略：网页历史无法确认且本地无已发或待核验记录时静默按首发执行，不弹提示、不保存unknown观察；未知不等于证明从未发送，也不能覆盖明确历史",
+      "observationStorage": "followObserved和dmHistoryObserved保存当前账号观察摘要；dmHistorySentObserved保留明确已发证据，后续空历史不能清除。网页历史不增加dmCount，不记本次confirmed_success；本次跳过与历史记录分开显示",
+      "entryFlow": {
+        "locate": "在当前目标主页核对关注与私信控件所属区域，使用绑定元素执行真实点击；重绘、歧义或不可用分别诊断",
+        "profileIdentityFix": "修复私信按钮位于user-info内部时入口识别成功、但身份捕获只认兄弟按钮组的遗漏；身份捕获统一覆盖内部按钮及已验证的配对兄弟组，范围仍限定当前目标主页",
+        "nameReadiness": "在主页入口点击前取得完整昵称；不读取或等待头像，不要求聊天UID；聊天标题和输入框就绪立即继续，不增加固定间隔",
+        "evidenceBoundary": "收件人身份未知必须保持未发送；这与私信历史未知的静默首发策略不同。历史未知可沿用用户规则，但每次填写和发送仍须确认收件人身份",
+        "messageList": "入口点击后可能先显示消息列表；完成目标主页私信入口原生点击后，捕获昵称仍与当前主页一致时，只选择可见活动列表中完整昵称一致的唯一会话行一次；多个同名候选不选择，不选首行。进入后再次比较活动聊天头昵称；头像和UID不参与当前StackLayout会话识别",
+        "messageListTiming": "沿用有限时就绪检查，目标界面就绪立即继续；不新增额外固定间隔",
+        "recipient": "所有新建和复用输入框先核对完整昵称：完成目标主页入口原生点击后，比较主页h1与唯一可见StackLayout活动聊天标题；只比较昵称，不核对头像或聊天UID。填写前和发送前重新核对昵称、绑定元素及消息全文；昵称不一致或缺失保持未发送",
+        "emojiName": "主页Twemoji图片按资源码点核对alt后还原，与聊天文字表情按完整顺序比较；支持纯表情和组合表情，保留连接符及肤色修饰，不删除表情后模糊匹配。缺少alt或未知图片不能退化为剩余文字匹配；读取完整DOM昵称，不受视觉省略号影响",
+        "recipientEvidence": {
+          "explicit_uid": "其他旧式页面结构的既有明确ID依据；当前StackLayout流程不使用",
+          "dom_profile_name": "目标主页与当前活动聊天顶部完整昵称一致；不核对头像或聊天UID，不等同于平台UID认证"
+        },
+        "authorization": "入口、目标会话行、填写、关注和发送前重新检查授权与停止；回调不重跑已写待核验动作的资格判断，不增加动作次数",
+        "diagnostics": [
+          "DM_ENTRY_NOT_FOUND",
+          "DM_ENTRY_AMBIGUOUS",
+          "DM_ENTRY_CHANGED",
+          "DM_ENTRY_UNAVAILABLE",
+          "DM_MESSAGE_LIST_ONLY",
+          "DM_TARGET_CHAT_NOT_READY",
+          "DM_RECIPIENT_UNCONFIRMED"
+        ],
+        "notSent": "入口、会话或发送控件准备失败记本次未发送；不增加私信尝试和成功次数，不推断永久禁发，也不覆盖已确认关注",
+        "privacy": "界面诊断仅记录入口/会话/发送阶段、白名单错误码、控件计数及explicit_uid或dom_profile_name依据类型，不记录实际昵称、UID、头像地址、页面全文、私信正文、选择器或凭据",
+        "manualSend": "用户在浏览器自行发送的文字，能从本次可读网页历史确认时参与防重；明确已有私信按冻结重复规则跳过或继续，不把历史消息伪造成本次软件发送成功",
+        "validation": "隔离测试复现旧头像路径误暂停、无头像、表情、重复昵称和会话切换；不代表本次发布已完成真实账号发送或生产安装验收"
+      },
+      "unknownReceipt": "仅已执行发送点击且缺少可靠回执才记待核验，人工核验前不自动重发",
+      "dmReceipt": "当前主页面原生点击后被动核对protobuf命令100、同请求序列、目标会话、冻结全文、客户端消息编号、发送者与服务端消息编号；仅同步业务成功确认平台接受，非送达或已读；总等待上限30秒，明确回执到达即返回",
+      "notSent": "未找到入口/输入框/发送控件或执行前检查失败：明确未发送，不扣未发生的发送尝试",
+      "guards": "每次对外动作检查授权与停止；回执检查码与明确重复、会话上限、互关限制分别记录，本用户限制不累计异常；其他连续异常在保存当前用户结果及进度后暂停；验证码、账号频繁和目标变化立即暂停"
+    },
+    "upgrade": "保留API Key、账号列表、旧chrome-profiles、线索、联系记录和自定义业务材料；已有新版节奏不重置。内嵌electron-profiles使用独立内核，各账号首次重新扫码，不复制旧Chrome登录"
+  },
+  "aiDecision": {
+    "contract": {
+      "version": 3,
+      "fields": [
+        "i",
+        "need",
+        "reason"
+      ],
+      "needs": [
+        "是",
+        "否"
+      ],
+      "maxReasonChars": 30
+    },
+    "policy": "判断的是“是否可考虑联系”，不是“是否已经确认购买服务”。“是”需要评论者表达相关求助、服务咨询或本人/朋友当前问题，不要求出现“我的店”或购买意愿。“否”表示本条未见相关求助、服务咨询或本人/朋友当前问题证据，不等于已经证明评论者是同行。先根据用户评论 comment、该用户提供的 comments 和 workRef 对应作品，判断评论者是在向服务方寻求帮助，还是在回答、建议、评价作者或提供能力。作品用于补足业务话题和对话方向，作品作者的停用、冻结或求助不能代替评论者本人的需求，理由也不得这样归属。评论者询问解决方法、能否处理、服务费用、联系方式或服务真实性，以及描述本人/朋友当前相关问题，判为“是”；评论可以省略主语或很简短，但需要结合语境体现上述求助或咨询方向。具体账户问题作品下，评论主动说“我也是”“我同样收到”“我跟你一样”“我就是这个情况”，已将作品描述的问题指向本人，属于当前问题，判“是”；不要求再写“怎么办”或购买意愿。理由可写“表示遇到相同问题”，不补充评论未确认的细节。仅作者问题而评论没有指向自身或朋友，仍不能移植为评论者需求；仅回答或建议作者也仍判“否”。服务介绍下“多少”“多少钱”“怎么处理”“真的假的”可分别表达询价、处理方法或真实性咨询，不得因没有写自己的账户问题就排除。在服务介绍下仅报相关问题标签可视为简短问题咨询，理由说明问题尚需核实，不得写成已确定本人被封。仅回答求助作者“可以处理的”“可以的”“可以试试”“有案例”、提供自己的处理能力或案例、推荐第三方渠道、分析作者邮件或案例、纯评价、运营观点、纯表情/祝福，以及分享既往经验却没有新求助或咨询，判为“否”。求助帖下“有案例”是向作者提供案例，服务介绍下“你有案例吗”是询问服务证据，二者方向不同；“可以帮您处理”是在提供帮助，“这种情况你可以处理吗”是在寻求帮助。询问作者案例性质或原因且没有处理诉求，例如“实锤关联吗”，判为“否”；不能将所有问题句都当成服务咨询。只批评或评价服务而没有求助、费用、方式或真实性咨询，判为“否”；既包含质疑又确实询问付款条件或服务真实性时仍可判为“是”。过去成功过、认识能处理的人或业务相关讨论本身都不是当前求助证据；若本人/朋友仍有未解决问题或新的咨询，结合所提供的同一用户评论判为“是”。评论的明确对象优先于作品话题；明确询问抖店等主营业务范围外的平台或服务，判为“否”，不能用亚马逊作品话题覆盖评论对象。明确业务范围以外、拒绝联系、已解决且没有新的问题或咨询，判为“否”。不能仅因业务相关、没有拒绝或无法证明同行就保留为“是”；没有相关求助、服务咨询或本人/朋友当前问题证据时判“否”，理由描述未见求助、回答作者、提供能力、转介绍或历史经验，不猜测同行身份。UID、昵称和关键词仅用于标识或粗筛，不作为需求或同行身份依据。缺少上下文不得编造用户经历、确定需求、成交意向、处理效果或成功承诺。",
+    "policyVersion": "contact-v4-request-direction",
+    "inputMapping": {
+      "【用户评论】": "items[].comment",
+      "【评论时间】": "items[].time",
+      "【用户UID】": "items[].uid（优先UID，回退uid）",
+      "【用户名称】": "items[].nickname",
+      "【所在视频描述】": "items[].workRef对应works[].videoDescription"
+    },
+    "instructionBoundary": {
+      "system": "固定联系判断政策、证据来源要求、字段映射及结果协议",
+      "userFields": [
+        "businessProfile",
+        "businessRules",
+        "works",
+        "items"
+      ],
+      "user": "业务资料、自定义行业规则和评论作品均为JSON材料，不改变系统政策或返回协议"
+    },
+    "evidenceRules": "先区分求助、服务咨询、回答作者与提供能力的对话方向；comment和comments是该评论者的完整证据。本人/朋友当前问题及处理、费用、联系方式、服务真实性咨询判是；具体问题作品下主动表示我也是/同样收到/跟你一样已将当前问题指向自身，无需再问怎么办。仅回答作者、提供能力案例、转介绍、纯评价或既往经验无当前问题或新咨询判否。作品作者经历不移植到评论者，评论明确业务对象优先。不能因业务相关、未拒绝或无法证明同行就判是，理由不猜同行。",
+    "inputCompleteness": {
+      "comment": "主评论保留完整文字，去首尾空白；不静默截断",
+      "comments": "保留已有同一用户完整评论，去同文重复；不按条数或字符数静默截断",
+      "workContext": {
+        "maxChars": 12000,
+        "overLimit": "标题＋正文开头＋末尾，明确省略标记及全文sourceHash；本机全文保留"
+      }
+    },
+    "promptValidation": "生成的prompt字符串仅含行业规则正文，AI.inspectPromptDraft拒绝生成器任务、嵌套prompt包装、评分/待确认及旧返回字段；不应用失败草稿，旧自定义预设保留并作为用户材料读取。",
+    "outputMapping": {
+      "i": "本批位置，映射到本机线索编号；不用UID或昵称回填",
+      "need": "aiNeed",
+      "reason": "aiReason",
+      "score": "新判不返回；aiScore=null，覆盖旧值前保存到aiScoreHistory"
+    },
+    "samplePayload": {
+      "businessProfile": {
+        "businessDesc": "我们提供亚马逊账号申诉、激活、解封、资金解冻服务",
+        "targetCustomers": "遇到亚马逊账户停用、申诉、激活或资金问题的卖家，以及询问处理办法、服务费用、联系方式或真实性的用户（含代朋友咨询）",
+        "clearNeeds": "评论者描述本人或朋友当前相关问题，或向服务方询问处理办法、能否处理、费用、联系方式、服务真实性；具体账户问题作品下主动说“我也是、同样收到、跟你一样、就是这个情况”已指向自身问题，判是，不要求再写怎么办，也不要求明确购买或写“我的店”",
+        "misjudgments": "作者求助不能直接移植给评论者，但评论主动表示本人或朋友遇到同样当前问题则判是；仅回答作者、提供能力案例、转介绍、纯评价和既往经验无新问题或咨询判否。业务相关、未拒绝、无法证明同行不足以判是；理由不猜同行、不编造本人问题细节"
+      },
+      "businessRules": "业务范围：亚马逊账户申诉、激活、解封、资金解冻。结合公司业务和目标客户判断。\n判断的是“是否可考虑联系”，不是“是否已经确认购买服务”。“是”需要评论者表达相关求助、服务咨询或本人/朋友当前问题，不要求出现“我的店”或购买意愿。“否”表示本条未见相关求助、服务咨询或本人/朋友当前问题证据，不等于已经证明评论者是同行。先根据用户评论 comment、该用户提供的 comments 和 workRef 对应作品，判断评论者是在向服务方寻求帮助，还是在回答、建议、评价作者或提供能力。作品用于补足业务话题和对话方向，作品作者的停用、冻结或求助不能代替评论者本人的需求，理由也不得这样归属。评论者询问解决方法、能否处理、服务费用、联系方式或服务真实性，以及描述本人/朋友当前相关问题，判为“是”；评论可以省略主语或很简短，但需要结合语境体现上述求助或咨询方向。具体账户问题作品下，评论主动说“我也是”“我同样收到”“我跟你一样”“我就是这个情况”，已将作品描述的问题指向本人，属于当前问题，判“是”；不要求再写“怎么办”或购买意愿。理由可写“表示遇到相同问题”，不补充评论未确认的细节。仅作者问题而评论没有指向自身或朋友，仍不能移植为评论者需求；仅回答或建议作者也仍判“否”。服务介绍下“多少”“多少钱”“怎么处理”“真的假的”可分别表达询价、处理方法或真实性咨询，不得因没有写自己的账户问题就排除。在服务介绍下仅报相关问题标签可视为简短问题咨询，理由说明问题尚需核实，不得写成已确定本人被封。仅回答求助作者“可以处理的”“可以的”“可以试试”“有案例”、提供自己的处理能力或案例、推荐第三方渠道、分析作者邮件或案例、纯评价、运营观点、纯表情/祝福，以及分享既往经验却没有新求助或咨询，判为“否”。求助帖下“有案例”是向作者提供案例，服务介绍下“你有案例吗”是询问服务证据，二者方向不同；“可以帮您处理”是在提供帮助，“这种情况你可以处理吗”是在寻求帮助。询问作者案例性质或原因且没有处理诉求，例如“实锤关联吗”，判为“否”；不能将所有问题句都当成服务咨询。只批评或评价服务而没有求助、费用、方式或真实性咨询，判为“否”；既包含质疑又确实询问付款条件或服务真实性时仍可判为“是”。过去成功过、认识能处理的人或业务相关讨论本身都不是当前求助证据；若本人/朋友仍有未解决问题或新的咨询，结合所提供的同一用户评论判为“是”。评论的明确对象优先于作品话题；明确询问抖店等主营业务范围外的平台或服务，判为“否”，不能用亚马逊作品话题覆盖评论对象。明确业务范围以外、拒绝联系、已解决且没有新的问题或咨询，判为“否”。不能仅因业务相关、没有拒绝或无法证明同行就保留为“是”；没有相关求助、服务咨询或本人/朋友当前问题证据时判“否”，理由描述未见求助、回答作者、提供能力、转介绍或历史经验，不猜测同行身份。UID、昵称和关键词仅用于标识或粗筛，不作为需求或同行身份依据。缺少上下文不得编造用户经历、确定需求、成交意向、处理效果或成功承诺。\n只输出“是/否”及不超过30字符的简短理由，不输出评分或待确认。\n\n【用户评论】见待判断数据中的 comment 字段\n【评论时间】见待判断数据中的 time 字段\n【用户UID】见待判断数据中的 uid 字段\n【用户名称】见待判断数据中的 nickname 字段\n【所在视频描述】见 items.workRef 对应 works 中的 videoDescription 字段",
+      "total": 2,
+      "works": [
+        {
+          "id": "work-1",
+          "videoDescription": "亚马逊账户申诉业务说明",
+          "workContext": {
+            "truncated": false,
+            "originalChars": 11,
+            "includedChars": 11,
+            "maxChars": 12000,
+            "sourceHash": "79767cedd9eadbfd9a1e61be4c037f4abae610179f88f333ea36d11132c49136",
+            "state": "available",
+            "source": "history"
+          }
+        }
+      ],
+      "items": [
+        {
+          "i": 1,
+          "comment": "这种亚马逊账户问题怎么处理？",
+          "comments": [],
+          "time": "2026-10-08",
+          "uid": "样例UID1",
+          "nickname": "匿名用户1",
+          "workRef": "work-1"
+        },
+        {
+          "i": 2,
+          "comment": "问题已经解决，不需要服务。",
+          "comments": [],
+          "time": "2026-10-08",
+          "uid": "样例UID2",
+          "nickname": "匿名用户2",
+          "workRef": "work-1"
+        }
+      ]
+    },
+    "packing": "自动和手动都计完整system、公司介绍、行业要求、共享works/items、JSON消息包装及结果输出预留，合计不超过模型上下文90%，输出另不超过模型max_output_tokens；按选定顺序逐条装批。手动额外限制用户消息payloadChars及条数。单项超限拒绝发送并保留未判断，不强制单条。UTF8字节保守估算并非精确token分词，实际以usage为准。",
+    "budget": {
+      "targetRatio": 0.9,
+      "automatic": "模型上下文与输出双重预算",
+      "manual": "模型预算＋payloadChars字符预算＋条数上限",
+      "oversizeAction": "budget_rejected；未发请求；其它合规线索继续",
+      "sample": {
+        "inputTokensEstimate": 13285,
+        "outputTokensReserved": 656,
+        "totalTokensEstimate": 13941,
+        "targetTokens": 943718,
+        "contextWindow": 1048576,
+        "maxOutputTokens": 393216,
+        "estimateMethod": "UTF-8字节数＋消息包装开销（保守估算，不是精确tokenizer）",
+        "withinBudget": true
+      },
+      "capacity": {
+        "model": "deepseek-flash",
+        "contextWindow": 1048576,
+        "maxOutputTokens": 393216,
+        "source": "https://api-docs.deepseek.com/api/list-models/",
+        "sourceKind": "official_document_fallback",
+        "documentCheckedAt": "2026-10-08"
+      },
+      "outputReservation": 656
+    },
+    "errorHandling": {
+      "splitOnly": [
+        "AI_FORMAT_INVALID",
+        "AI_OUTPUT_LENGTH",
+        "AI_RESPONSE_INVALID",
+        "AI_OUTPUT_INCOMPLETE"
+      ],
+      "stopHttp": "非429的4xx及其它不可重试HTTP状态，包括401/402/403/404",
+      "stopCodes": [
+        "AI_OUTPUT_REFUSED",
+        "AI_PROVIDER_ERROR"
+      ],
+      "transient": [
+        "HTTP429",
+        "HTTP5xx",
+        "AI_NETWORK_ERROR",
+        "AI_TIMEOUT",
+        "AI_TRANSPORT_RESPONSE_INVALID"
+      ],
+      "providerRetries": 2,
+      "maxBackoffMs": 30000,
+      "backoff": "同批最多2次，默认1秒/2秒；尊重Retry-After，上限30秒，授权和停止持续有效"
+    },
+    "scheduling": {
+      "normalAiDelay": 0,
+      "browserActionCounter": false,
+      "authorizeEveryRequest": true,
+      "stopAvailable": true
+    },
+    "currentResult": "aiDone===true；aiNeed仅是/否；aiReason为1至30字符；aiPromptVersion和aiInputHash与当前规则及全文输入一致",
+    "resultFilter": "五类为全部、未判断、AI是、AI否、待重判；AI是/否仅含当前有效结果，历史或缺少有效性证据归待重判。联系状态独立筛选，旧f=ai仅为历史接口兼容，预检查仍只接受当前有效是",
+    "concurrency": {
+      "writeChunk": 32,
+      "behavior": "固定名单、规则/接口设置、作品与线索输入及旧结果快照；设置改变暂停，删除或输入/已有结果变化拒绝旧回写；分块安全合并写入，保留独立跟进修改"
+    },
+    "progress": "线索库可见提交、规划、批次、是/否/失败/跳过、实际模型请求数；提交busy防重复；停止同时中止批量/单条、生成草稿和匿名样例测试；部分预算拒绝以completed_with_errors结束，未判不会自动变否",
+    "audit": {
+      "events": [
+        "result",
+        "request_sent",
+        "provider_retry",
+        "request",
+        "budget",
+        "response_invalid",
+        "usage",
+        "request_failed",
+        "selection",
+        "model_capacity",
+        "plan",
+        "budget_rejected",
+        "batch_completed",
+        "retry_split",
+        "completed",
+        "paused"
+      ],
+      "preparedEvent": "request（stage:prepared）表示组包准备",
+      "sentEvent": "request_sent表示实际HTTP请求前统计",
+      "privacy": "不记录API Key、完整输入或模型原始长回复"
+    },
+    "migration": "仅已知旧内置预设名称/全文和四项默认业务资料精确成对匹配才迁移；三份用户自定义预设、启用选择、API Key、模型与用户设置保留",
+    "officialSources": [
+      "https://api-docs.deepseek.com/api/list-models/",
+      "https://api-docs.deepseek.com/api/create-chat-completion/",
+      "https://api-docs.deepseek.com/zh-cn/quick_start/token_usage/"
+    ],
+    "reviewedOn": "2026-10-08"
+  },
+  "sourceFiles": [
+    {
+      "file": "dy-lead-app/lib/lead-fields.js",
+      "sha256": "17fa93b3b1d210f1dde4372312b3dd9c3de2609b3dee702d7fa0558a2f00f27f"
+    },
+    {
+      "file": "dy-lead-app/lib/work-metadata.js",
+      "sha256": "d1e4b7da238bbfb4ed78769de7286e82c8dfa8939c278ee93a1598f7665017cc"
+    },
+    {
+      "file": "dy-lead-app/lib/user-metadata.js",
+      "sha256": "e29e6a584b8a05b26ce85d28d837533973e5cba6005ff6142dadda1e53ff49e4"
+    },
+    {
+      "file": "dy-lead-app/lib/account-login.js",
+      "sha256": "626b8d2c95fa58e02877ed317be1be4bd7632a9e60e41de4617a4f2ab9bdd0fb"
+    },
+    {
+      "file": "dy-lead-app/lib/account-login-scan.js",
+      "sha256": "9cd4c08ece66d0deab208e6f4111bddd15deda442d7993f4ed65727cce0dc253"
+    },
+    {
+      "file": "dy-lead-app/lib/startup-login-scan.js",
+      "sha256": "bba988936be72d2587798f70784930928c2c1817a4c452e891ec9101f3894f9f"
+    },
+    {
+      "file": "dy-lead-app/lib/browser-runtime.js",
+      "sha256": "fb59494e256e8ee07f0bbf8711df2a18bd08c0167007d6a8a82425b36f4c34e0"
+    },
+    {
+      "file": "dy-lead-app/lib/outreach-browser.js",
+      "sha256": "1ac8578ba99b7a20c009f5965e48c77a4b6746172fcd714112176068104c4d8d"
+    },
+    {
+      "file": "dy-lead-app/lib/action-receipts.js",
+      "sha256": "1e8cc7ac693ff8d1929396490d5331d5e99359515978a1c9289e038e9550c943"
+    },
+    {
+      "file": "dy-lead-app/lib/ai-policy.js",
+      "sha256": "220b4dc38940064e5494ad364d6d7bad34c80211dca7cd9bb3912194a7156884"
+    },
+    {
+      "file": "dy-lead-app/lib/keyword-screen.js",
+      "sha256": "58634ffac641f212d4c1cb4e3593cc487984dbd51bec096002eb5086577750dd"
+    },
+    {
+      "file": "dy-lead-app/engine-actions.js",
+      "sha256": "a74ddb786e3e37600bbf746567a680a695cedfc09af02e49c411d2e4f40f9155"
+    },
+    {
+      "file": "dy-lead-app/scheduler.js",
+      "sha256": "3c2c0533be789856b1fa35a00170ade1d6165c4924117b7c551b0ac216312099"
+    },
+    {
+      "file": "dy-lead-app/engine.js",
+      "sha256": "4643f85ff96c8af54bbf64dd10bdf9cbfd744a5bd6812df434d906fb50047c9e"
+    },
+    {
+      "file": "dy-lead-app/ai.js",
+      "sha256": "29614f0d70de88c32cd8ebb9e36d6d55103195bb18df8cf79c12cf4defea7e33"
+    },
+    {
+      "file": "dy-lead-app/engine-ai-tasks.js",
+      "sha256": "996343b791e3165ad29d14bdbad82cb7789b655be67cf0c32854bc61e65a3e31"
+    },
+    {
+      "file": "dy-lead-app/workflow.js",
+      "sha256": "6f04bd3b8790550dcaed6e5e849637d2335478f8008b66e7e38a170d3288826f"
+    },
+    {
+      "file": "dy-lead-app/server.js",
+      "sha256": "ccbd0ea996142a0663a7939494833aeac2c7c60f74f0528cd08420c76b8df87b"
+    },
+    {
+      "file": "dy-lead-app/store.js",
+      "sha256": "559f79eb7bec57e1b51ff85fdcb7864ae04a110a92a039bd57d325e5c60b45bf"
+    },
+    {
+      "file": "dy-lead-app/web/app.js",
+      "sha256": "9148c86eaea7e215d51faa9a210f5bcf81feba6e122168e20049f657f5855f86"
+    },
+    {
+      "file": "dy-lead-app/web/index.html",
+      "sha256": "7d705e3f369ef6a1f6efa4a0936e10259556861ac4db84f151bcbed97cc3c8fc"
+    },
+    {
+      "file": "desktop/package.json",
+      "sha256": "85f401f20f7a90698650c95953ef7d4024a7fe1231c227e6c8302271d61a158b"
+    },
+    {
+      "file": "dy-lead-app/engine-collection-tasks.js",
+      "sha256": "7aa41a8597e0e06a69a688a5be26340a11ab548e7b549a79e3ad17df1240908b"
+    },
+    {
+      "file": "dy-lead-app/lib/dm-protocol.js",
+      "sha256": "b76626dcd64d773af32ae742e612ddec8a4065fe18e3c9178a280488ce97d1ea"
+    },
+    {
+      "file": "dy-lead-app/lib/dm-receipt-observer.js",
+      "sha256": "d46972d93e61d8c31546df2a2c6439476629d786a70b031e2366ba7a1e51eb27"
+    },
+    {
+      "file": "dy-lead-app/lead-query.js",
+      "sha256": "e560483a8cc0ea3e06723a230e4a1762b9f6fc87887c1027001ee201fed98866"
+    },
+    {
+      "file": "dy-lead-app/lib/comment-evidence.js",
+      "sha256": "d06e4bf147789fffa05ffd56f9f67e7a88b849fd5cf917c279efae4385226ed0"
+    },
+    {
+      "file": "dy-lead-app/lib/dm-history-observer.js",
+      "sha256": "ef06a61a7c954b10ee8eca7924ea593ddf8aa73c81550f89b5f517482662ee76"
+    },
+    {
+      "file": "dy-lead-app/lib/profile-relation-observer.js",
+      "sha256": "060df09486da16555af287321c5324a337850ebceec37d70a2ce0b888ceae1bd"
+    },
+    {
+      "file": "desktop/main.js",
+      "sha256": "587d4d3972f70692e4bfaa6501cb23a4c5b987cee43103f744b0434a18ff0f23"
+    },
+    {
+      "file": "desktop/preload.js",
+      "sha256": "1ee65cd7553471eebd3297f54bbaa6e8ba74bd49e5bc8ff79f02b1ea56cf0c1a"
+    },
+    {
+      "file": "desktop/account-browser-host.js",
+      "sha256": "fdda9ca15dfacc46f508e0f747d2361e52895780388b8736d80d3c362e302858"
+    },
+    {
+      "file": "dy-lead-app/lib/embedded-browser-client.js",
+      "sha256": "f43712cfc06e3b5c1332995612c7aee058d6efe190e39af9ade18ad74eea0260"
+    },
+    {
+      "file": "dy-lead-app/web/style.css",
+      "sha256": "a30463302be077aaa24053b5954110a7bd8b44f76b91ab998bf528bf1ff4c7b1"
+    },
+    {
+      "file": "dy-lead-app/package.json",
+      "sha256": "818963f1009af26e1ea5d0f3fedc0104e4aff22b51d28e7266a404317874f3db"
+    },
+    {
+      "file": "desktop/使用说明.txt",
+      "sha256": "5c04db11ec7a7e4714d365d9a2c70ffb8437e9e3d0af08028781a35a0cdc430b"
+    },
+    {
+      "file": "build-tools/build.js",
+      "sha256": "1da46736d8ca5ca71b97fa1891bec176df07ca49f50211452a5b1759f6a398ae"
+    },
+    {
+      "file": "build-tools/build.ps1",
+      "sha256": "e872bc10565387aefeb034dd3319a932bb759bae1368a0c324f176873e50f4cd"
+    },
+    {
+      "file": "build-tools/setup.iss",
+      "sha256": "e005e46249d1914a114a0f51563f1099ac2b847016356b79668d31a42e27002d"
+    },
+    {
+      "file": "dy-lead-app/lib/browser-control-lease.js",
+      "sha256": "f58865d752e1b370838818cd46b8268ccae34bb92b6db4400af714c37fd5292d"
+    },
+    {
+      "file": "desktop/smoke-checks.js",
+      "sha256": "2cf36b7ebe6a0e6f2e82faf61731e005779265f91dbc273b705aa59f4901500e"
+    },
+    {
+      "file": "dy-lead-app/lib/collection-browser.js",
+      "sha256": "e91959b26759dc5ea630b9630f2aa193aa0a35188bc429ef172581d4d6f74b15"
+    },
+    {
+      "file": "build-tools/verify-embedded-browser.js",
+      "sha256": "0a4e287e82f8d2cc06c56778727686442f450adf6d83e42352201869897c2585"
+    },
+    {
+      "file": "build-tools/verify-embedded-outreach.js",
+      "sha256": "5fcea8a30accd6d64b993557876db1aa206cfb9df36a2aa12d1d505eeb2d4a8d"
+    }
+  ],
+  "privacy": "仅源代码字段定义、默认配置及公开服务路径；无客户记录、API Key、登录 Cookie、令牌或签名查询参数。"
+}

@@ -1,0 +1,94 @@
+# ===== 敏感 / 私密（绝不入库）=====
+服务器密钥.txt
+网页管理登录信息.txt
+网页登录账户.txt
+本人测试账户.txt
+管理端配置.env
+*.pem
+license-server/license-data/
+license-server/keys.json
+license-server/本人测试账户.txt
+license-server/管理端配置.env
+license-server/client-config.huamao.json
+
+# 开发机授权配置（含本机管理员密码），客户包使用 build 脚本生成的干净配置
+config.json
+
+# ===== 客户 / 运行数据（绝不入库）=====
+**/data/
+*.log
+license-cache.json
+servertime.json
+settings.json
+leads.json
+accounts.json
+videos.json
+daily.json
+plans.json
+cooldowns.json
+task-checkpoint.json
+search-results.json
+dm-account-state.json
+contact-allocation.json
+*.bak
+*.tmp
+
+# ===== 开发工具 / 管理脚本（含密钥写入脚本）=====
+dy-lead-app/tools/
+
+# ===== 旧混淆备份 / 运维脚本 / 研究采样（可能含凭据或样本，不入库）=====
+dy-lead-app-obf/
+tools/
+doc-tools/
+__pycache__/
+*.pyc
+license-server/HTTPS*.json
+
+# ===== 构建产物 / 二进制 / 大文件 =====
+*.exe
+*.zip
+*.xlsx
+*.png
+*.jpg
+*.ico
+dy-lead-app-release/
+dy-lead-app/node.exe
+dy-lead-app/node_modules/
+build-tools/node_modules/
+build-tools/excel-redesign/
+build-tools/chrome-smoke/
+build-tools/*backup*/
+build-tools/electron-runtime-*/
+build-tools/.qa-chromium-cache/
+build-tools/installed-backup-*/
+build-tools/qa-*/
+build-tools/reports/
+build-tools/admin-*/
+build-tools/audit-*/
+build-tools/*.log
+build-tools/*.json
+
+# ===== 抓包 / 采样 / 输出（含真实样本）=====
+抓包/
+诊断采样/
+输出/
+outputs/
+
+# ===== 助手工作区 / 本地受控文件 =====
+.workbuddy/
+AI批量超时修复-*.txt
+AI阶梯预算调整-*.txt
+desktop/使用说明.txt
+
+# ===== 含公网服务器 IP / 运维细节的文档与脚本（不公开）=====
+build-tools/check-production-v22.py
+使用文档/华贸获客软件完整使用与管理手册-*.html
+使用文档/华贸获客软件完整使用与管理手册-*.md
+使用文档/华贸获客技术交接文档-*.html
+使用文档/华贸获客技术交接文档-*.md
+license-server/Cloudflare授权路径配置说明.txt
+license-server/HTTPS部署与迁移.txt
+license-server/部署维护说明.md
+license-server/使用说明.md
+license-admin-web/部署维护说明.md
+license-admin-web/网页管理上线验收-*.json

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "serverUrl": "https://huamao.xyz/dy-license",
+  "allowedHosts": [
+    "huamao.xyz"
+  ],
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzYFc6IHWn4k7/wmvIP7G\n9u3PiYMDVEilvttNwPNw2RQiIaam5d7UYYMg6hFcb+8OoIWUgfv8w0lv9D4CI7gj\niRpG1ZGRS/m9I6sIkK9fnodkLWl8pwEA3PJFb24IKNnfPRhmzhNmZgQM/FluKReQ\nBXYVtQM3JoNZtybLTQWWWWTnacgH6gEM8Fxdyo7b0hWzOBhlCH3tucouXlOkbGMZ\nW9tNfjrRlxXzl+lWMLEYUO6GQaEVuYIQNCceVpLUvAtaoh4usRcKcRbdN5FKJBk5\nFSoI44ZyxHvdsztTkkhJACVSqRtvGR38fZFdlVuPXu2CRjZj2rLR0bYPuIA0pW9i\nvwIDAQAB\n-----END PUBLIC KEY-----\n"
+}

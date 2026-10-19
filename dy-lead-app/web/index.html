@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>抖音获客软件</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button id="btn-global-stop" class="danger global-stop"><span aria-hidden="true">■</span> 停止所有任务</button>
+  <!-- 预检查弹窗 -->
+  <div id="precheck-modal" class="hidden">
+    <div class="modal-mask"></div>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="pc-title" tabindex="-1">
+      <div class="modal-title" id="pc-title">预检查</div>
+      <div class="modal-summary" id="pc-summary"></div>
+      <div class="note frozen-note">本弹窗中的账号、名单、话术和重复联系规则已冻结。修改列表筛选、勾选或账号仅影响下一次预检查。执行时核对主页关系，已关注则跳过关注；网页明确已有私信按本次规则处理。预检查不扣额度，执行期间仅收窄名单。</div>
+      <div id="pc-message-preview" class="precheck-message hidden"></div><div class="modal-list" id="pc-list"></div>
+      <div id="pc-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button id="pc-cancel" class="normal">取消</button>
+        <button id="pc-confirm" class="primary">✅ 确认执行</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="verification-modal" class="hidden">
+    <div class="modal-mask"></div>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="verification-title" tabindex="-1">
+      <div id="verification-title" class="modal-title">人工核验</div>
+      <div class="note frozen-note">请先在抖音中核对本次操作，记录依据。仅确认失败后，才允许符合规则的用户进入后续重试。</div>
+      <label for="verification-note">核验依据</label><textarea id="verification-note" rows="4" placeholder="例如：已查看聊天记录，发送时间与消息内容一致"></textarea>
+      <div id="verification-error" class="login-err"></div>
+      <div class="modal-actions"><button id="verification-cancel" class="normal">取消</button><button id="verification-confirm" class="primary">确认核验结果</button></div>
+    </div>
+  </div>
+
+  <div id="field-detail-modal" class="hidden">
+    <div class="modal-mask"></div>
+    <div class="modal-box field-detail-box" role="dialog" aria-modal="true" aria-labelledby="field-detail-title" tabindex="-1">
+      <div id="field-detail-title" class="modal-title">完整内容</div>
+      <div id="field-detail-summary" class="modal-summary"></div>
+      <div id="lead-detail-actions" class="lead-detail-actions hidden" role="group" aria-label="线索跟进操作"></div>
+      <pre id="field-detail-content" class="field-detail-content" tabindex="0"></pre>
+      <div id="field-detail-copy-result" class="ok-hint" role="status"></div>
+      <div class="modal-actions"><button id="field-detail-copy" class="normal">复制完整内容</button><button id="field-detail-close" class="primary">关闭</button></div>
+    </div>
+  </div>
+
+  <!-- 登录层 -->
+  <div id="login-layer">
+    <div class="login-layout">
+      <div class="login-intro">
+        <div class="login-brand"><span class="brand-mark">H</span><span>华贸获客<span class="brand-caption">HUAMAO WORKSPACE</span></span></div>
+        <div class="login-eyebrow">把线索变成有序的行动</div>
+        <h1>发现需求<br>认真开始每一次联系</h1>
+        <p>从视频评论发现线索，用 AI 判断需求，再按确认的名单完成关注与私信。</p>
+        <div class="login-flow"><span>01 采集线索</span><span>02 判断需求</span><span>03 按用户触达</span></div>
+      </div>
+      <div class="login-box">
+        <div class="login-logo">欢迎使用</div>
+        <p class="login-subtitle">登录您的软件授权账户，进入工作台</p>
+        <label for="login-user">授权账户</label><input id="login-user" placeholder="请输入账户名" autocomplete="username">
+        <label for="login-pass">登录密码</label><input id="login-pass" type="password" placeholder="请输入密码" autocomplete="current-password">
+        <button id="btn-login" class="primary">登录工作台 <span aria-hidden="true">→</span></button>
+        <div id="login-err" class="login-err" role="alert"></div>
+        <div class="login-hint">采集账户与软件授权账户分别管理<br>线索和操作记录保存在本机</div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="side">
+    <div class="logo"><span class="brand-mark">H</span><span>华贸获客<small>客户工作台</small></span></div>
+    <div class="nav-caption">工作空间</div>
+    <nav id="nav" aria-label="工作台导航">
+      <a data-page="overview" class="active"><span class="nav-icon" aria-hidden="true">◫</span>总览</a>
+      <a data-page="accounts"><span class="nav-icon" aria-hidden="true">◎</span>账号管理</a>
+      <a data-page="browser"><span class="nav-icon" aria-hidden="true">▣</span>账号浏览器</a>
+      <a data-page="collect"><span class="nav-icon" aria-hidden="true">↓</span>采集获客</a>
+      <a data-page="leads"><span class="nav-icon" aria-hidden="true">▤</span>判断与执行</a>
+      <a data-page="settings"><span class="nav-icon" aria-hidden="true">⚙</span>设置</a>
+      <a data-page="logs"><span class="nav-icon" aria-hidden="true">≡</span>操作日志</a>
+    </nav>
+    <div class="side-foot">
+      <div id="client-build" class="client-build">网页调试模式 · 无客户端版本</div>
+      <div class="local-note"><span class="status-dot"></span> 数据保存在本机</div>
+      <button id="btn-open-datadir" class="side-link">打开数据文件夹 <span aria-hidden="true">↗</span></button>
+      <button id="btn-logout" class="side-link">退出登录</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="app-topbar"><div><span class="topbar-brand">华贸获客工作台</span><span class="topbar-subtitle">采集 · 判断 · 触达</span></div><span class="workspace-label"><span class="status-dot"></span> 本机工作空间</span></header>
+    <!-- 总览 -->
+    <section id="page-overview" class="page">
+      <div class="page-heading"><div class="section-kicker">WORKSPACE OVERVIEW</div><h2>工作总览</h2><p>从一条视频链接开始，把采集、判断与触达连成一条清晰流程。</p></div>
+      <div class="workflow-strip workflow-launches" aria-label="工作流程"><button data-goto="accounts"><span>01</span><strong>账号就绪</strong><small id="flow-accounts">检查专用浏览器登录</small></button><button data-goto="collect"><span>02</span><strong>采集评论</strong><small>单条或多条作品链接</small></button><button data-goto="leads"><span>03</span><strong>判断与执行</strong><small>判断评论，筛选后关注与私信</small></button></div><div class="workflow-next"><div><strong id="overview-next-title">从账号登录开始</strong><p id="overview-next-detail">先确认专用浏览器已登录，再添加作品链接。</p></div><button id="overview-next" class="primary" data-goto="accounts">进入账号管理</button></div>
+      <div class="cards">
+        <div class="card"><div class="num" id="st-total">0</div><div class="lbl">线索总数</div></div>
+        <div class="card"><div class="num" id="st-intent">0</div><div class="lbl">关键词候选</div></div>
+        <div class="card"><div class="num" id="st-followed">0</div><div class="lbl">已关注</div></div>
+        <div class="card"><div class="num" id="st-dm">0</div><div class="lbl">已私信</div></div>
+        <div class="card"><div class="num" id="st-new">0</div><div class="lbl">待处理</div></div>
+        <div class="card"><div class="num" id="st-ai">0</div><div class="lbl">AI 已判断</div></div>
+      </div>
+      <div class="panel">
+        <h3>当前任务</h3>
+        <div id="task-box" class="task-box">空闲</div>
+      </div>
+      <div class="panel">
+        <h3>账号状态</h3>
+        <div class="table-wrap">
+        <table id="ov-accounts"><thead><tr><th>账号</th><th>登录</th><th>今日关注尝试 / 成功</th><th>今日私信尝试 / 成功</th><th>今日视频尝试 / 已处理</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 账号管理 -->
+    <section id="page-accounts" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">ACCOUNTS</div><h2>账号管理</h2><p>默认使用外部专用浏览器，沿用原有外部登录资料。也可在下表切换为内嵌浏览器；两种模式独立保存登录资料，切换不删除账号或业务数据。请先停止任务再切换。</p></div>
+      <div class="add-row">
+        <input id="acc-name" placeholder="账号名称（如：主号）">
+        <input id="acc-proxy" placeholder="代理线路（可选，如 http://user:pass@1.2.3.4:8000）">
+        <input id="acc-note" placeholder="备注（可选）">
+        <button id="btn-add-acc" class="primary">＋ 添加账号</button>
+      </div>
+      <div id="account-startup-status" class="task-box account-status hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div id="account-login-status" class="task-box account-status" role="status" aria-live="polite" aria-atomic="true">软件会自动检查已有账号；也可用“检查”按钮重新核验。扫码登录和账号操作的结果将在此显示。</div>
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th>ID</th><th>名称</th><th>登录状态</th><th>浏览器模式</th><th>代理</th><th>今日关注/私信/视频</th><th>操作</th></tr></thead>
+        <tbody id="acc-list"></tbody>
+      </table></div>
+    </section>
+
+    <!-- 内嵌账号浏览器：平台内容由桌面进程显示在占位区内。 -->
+    <section id="page-browser" class="page browser-page hidden" aria-labelledby="browser-heading">
+      <div class="browser-heading"><div><h2 id="browser-heading">账号浏览器</h2><p>这里显示选择了内嵌模式的账号。外部模式会打开独立浏览器窗口，均从账号管理开始。</p></div><button id="btn-browser-workspace" class="normal">返回工作台</button></div>
+      <div id="browser-upgrade-note" class="browser-upgrade-note hidden"><p><strong>首次使用内嵌浏览器</strong> · 账号、API 设置、线索和操作记录继续保留。内嵌浏览器使用独立登录资料，首次请重新扫码；旧 Chrome 登录资料保留，不自动迁移。</p><button id="btn-browser-note-dismiss" class="normal">知道了</button></div>
+      <div class="browser-shell">
+        <div id="browser-tabs" class="browser-tabs" role="tablist" aria-label="已打开的账号浏览器"></div>
+        <div class="browser-toolbar" aria-label="浏览器导航"><div class="browser-navigation"><button id="btn-browser-back" class="normal" title="后退" aria-label="后退" disabled>←</button><button id="btn-browser-forward" class="normal" title="前进" aria-label="前进" disabled>→</button><button id="btn-browser-reload" class="normal" title="刷新当前网页" aria-label="刷新当前网页" disabled>↻</button></div><label class="browser-address"><span class="sr-only">当前网页地址（只读）</span><input id="browser-url" readonly placeholder="打开账号后显示当前网址" aria-label="当前网页地址（只读）"></label><button class="normal" data-goto="accounts">账号管理</button></div>
+        <div class="browser-context"><span id="browser-page-status" role="status" aria-live="polite">尚未打开账号浏览器</span><span id="browser-task-status">任务空闲</span></div>
+        <div id="browser-error" class="browser-error hidden" role="alert"></div>
+        <div id="browser-view-slot" class="browser-view-slot" role="region" aria-label="当前账号网页">
+          <div id="browser-empty" class="browser-empty"><span class="browser-empty-symbol" aria-hidden="true">▣</span><strong id="browser-empty-title">先打开一个账号</strong><p id="browser-empty-detail">进入账号管理，点击对应账号的“打开登录”，浏览器会显示在这里。</p><button id="btn-browser-show" class="primary hidden">显示当前账号</button><button id="btn-browser-empty-accounts" class="primary" data-goto="accounts">进入账号管理</button></div>
+        </div>
+      </div>
+      <p class="browser-footnote">切换页面只隐藏网页，任务继续运行；停止操作请点击“停止所有任务”。</p>
+    </section>
+
+    <!-- 采集 -->
+    <section id="page-collect" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">02 · 采集评论</div><h2>从作品链接开始</h2><p>输入一个或多个视频、图文链接。找到评论后逐页采集，完成后自动判断本次评论用户。</p></div>
+      <div class="task-workspace">
+      <div class="panel task-entry work-history-panel" id="collect-entry">
+        <div class="panel-heading"><h3>作品链接与分享文本</h3><span class="badge b-intent">按输入顺序处理</span></div>
+        <div class="row"><label for="col-account">采集账号</label><select id="col-account"></select><button class="normal" data-goto="accounts">管理账号</button></div>
+        <p class="note">支持 video 视频、note 图文和 v.douyin.com 分享短链接。可粘贴多条完整分享文本，每条一行；同一作品自动去重。强制重采应用于该输入框中的所有作品。</p>
+        <div class="row queue-filter-row"><label for="queue-status-filter">采集状态</label><select id="queue-status-filter"><option value="all">全部</option><option value="uncollected">未采集</option><option value="complete">完整</option><option value="partial">部分（可续采）</option><option value="interrupted">中断（可续采）</option><option value="unknown">待识别／未核验</option></select><span id="queue-filter-summary" class="hint" role="status"></span></div>
+        <p class="note">全选、批量删除与开始采集只作用于当前分类。删除仅清理队列输入，采集历史和线索仍保留。短链接或一组含多个作品的输入归为“待识别／未核验”。</p>
+        <div class="table-wrap work-history-wrap"><table class="tbl work-history-table link-entry-table"><colgroup><col style="width:8%"><col style="width:52%"><col style="width:18%"><col style="width:14%"><col style="width:8%"></colgroup><thead><tr><th><label class="queue-row-select"><input type="checkbox" id="queue-select-all" aria-label="全选当前筛选结果"><span>全选</span></label></th><th>作品链接 / 完整分享文本</th><th>采集状态</th><th>重采选项</th><th>操作</th></tr></thead><tbody id="link-rows"></tbody></table></div>
+        <div class="row"><button id="btn-link-add" class="normal">＋ 添加输入框</button><button id="btn-link-delete-selected" class="danger" disabled>批量删除当前已选</button><span id="collect-queue-summary" class="hint">一个输入框也可粘贴多个作品</span></div>
+        <label class="inline-check"><input id="c-col-autoai" type="checkbox"> 采集完成后，自动批量 AI 判断本次评论用户</label>
+        <div class="row" style="margin-top:6px"><label for="c-col-aiwindow">自动判断的评论时间范围</label><select id="c-col-aiwindow"><option value="0">全部时间</option><option value="1">1 天内</option><option value="3">3 天内</option><option value="7" selected>一周内（默认）</option></select></div>
+        <div class="note">自动判断默认只处理最近一周内的评论，超出范围的评论保留待人工筛选判断；可在上方切换为全部时间。作者与空评论不参与，不按关键词提前排除。</div>
+        <div class="task-action-bar"><button id="btn-collect-start" class="primary">开始采集并判断</button><button id="btn-task-stop" class="danger">停止任务</button><span id="collect-unsaved" class="hint" role="status"></span></div>
+        <div id="collect-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+      </div>
+      <div class="panel task-progress-panel"><div class="panel-heading"><h3>本次进度</h3><button class="normal" data-goto="logs">查看日志</button></div><div id="col-status" class="task-box" role="status" aria-live="polite">等待开始采集</div><div id="collection-summary" class="collection-summary hidden"></div><div id="collection-next" class="row hidden"><button id="btn-collection-leads" class="primary">查看本次评论用户</button><button class="normal" data-goto="leads">准备关注与私信</button></div></div>
+      </div>
+      <div class="pacing-summary"><div><strong>已保存的采集节奏</strong><p id="collect-pacing-summary">翻页 3 秒 ±40% · 作品之间 10 秒 ±20%</p></div><button class="normal" data-goto="settings" data-focus="pacing-settings">调整节奏</button></div>
+      <details class="panel task-options" id="collect-options"><summary>采集规则与任务上限</summary><div class="grid">
+        <label>同作品重采冷却（小时）<input id="c-col-cooldown" type="number" min="0" max="720"></label>
+        <label>每日作品尝试上限<input id="c-col-daily" type="number" min="1" max="500"></label>
+        <label>每个作品最多翻页轮数<input id="c-col-max" type="number" min="10" max="500"></label>
+        <label><input id="c-col-skipempty" type="checkbox"> 跳过无文字评论（纯表情／图片）</label>
+      </div><div class="row"><button id="btn-save-col" class="normal">保存采集规则</button><span id="col-saved" class="ok-hint" role="status"></span></div><div class="note">限额仅用于控制本软件的任务规模。分页结束以评论响应为准；达到轮数上限会保留为可续采。</div></details>
+      <details class="panel task-options" id="search-options"><summary>关键词搜索找作品（搜索页 → 作品列表 → 加入采集队列）</summary>
+        <div class="grid">
+          <label style="grid-column:span 2">搜索关键词（每行一个，最多 50 个）<textarea id="s-kws" rows="3" placeholder="亚马逊账号申诉&#10;协议三 解封"></textarea></label>
+          <label>搜索范围<select id="s-type"><option value="video">视频</option><option value="note">图文</option><option value="mixed">综合</option></select></label>
+          <label>最少评论数<input id="s-minc" type="number" min="0" max="100000" value="0"></label>
+          <label>单关键词最多翻页<input id="s-maxp" type="number" min="1" max="50" value="20"></label>
+        </div>
+        <div class="row"><button id="btn-search-start" class="primary">开始搜索</button><button id="btn-task-stop3" class="danger">停止任务</button><span id="search-unsaved" class="hint" role="status"></span></div>
+        <div id="search-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+        <div class="panel-heading"><h3>搜索结果 <span class="hint" id="search-count"></span></h3><button id="btn-search-clear" class="normal">清空列表</button></div>
+        <div class="row search-filter-row"><label for="search-status-filter">采集状态</label><select id="search-status-filter"><option value="all">全部</option><option value="uncollected">未采集</option><option value="complete">完整</option><option value="partial">部分（可续采）</option><option value="interrupted">中断（可续采）</option><option value="unknown">待识别／未核验</option></select><button id="btn-search-clear-selection" class="normal">取消所有勾选</button><span id="search-selection-note" class="hint" role="status"></span></div>
+        <div class="table-wrap search-results-wrap"><table class="tbl"><colgroup><col style="width:6%"><col style="width:12%"><col style="width:36%"><col style="width:13%"><col style="width:6%"><col style="width:6%"><col style="width:21%"></colgroup><thead><tr><th><label class="search-select-label"><input id="search-select-all" type="checkbox" aria-label="全选当前筛选搜索结果">全选</label></th><th>关键词</th><th>作品标题 / 内容</th><th>作者</th><th>评论</th><th>类型</th><th>采集状态 / 最近采集</th></tr></thead><tbody id="search-list"></tbody></table></div>
+        <div class="row"><button id="btn-search-toqueue" class="primary">＋ 勾选作品加入采集队列</button><span id="search-toqueue-msg" class="ok-hint" role="status"></span></div>
+        <div class="note">只读取搜索页自身的响应摘要，不构造平台请求、不保存响应原文。搜索节奏（关键词间隔、每日搜索上限）在「设置 → 任务节奏」调整。</div>
+      </details>
+      <div class="panel work-history-panel"><h3>作品采集历史 <span class="hint" id="video-hist-count"></span></h3><div class="table-wrap work-history-wrap"><table class="tbl work-history-table"><colgroup><col style="width:42%"><col style="width:15%"><col style="width:8%"><col style="width:18%"><col style="width:17%"></colgroup><thead><tr><th>作品标题 / 内容</th><th>最近采集</th><th>次数</th><th>采集状态</th><th>操作</th></tr></thead><tbody id="video-hist"></tbody></table></div><p class="lead-table-note">视频与图文使用同一布局 · 点击作品查看完整标题与正文</p></div>
+    </section>
+
+    <!-- 判断与执行（AI 与线索 + 关注与私信合并） -->
+    <section id="page-leads" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">03 · 判断与执行</div><h2>AI 与线索 · 关注与私信 <span class="hint" id="leads-total"></span></h2><p>评论与所属作品并排查看：先判断与筛选，再在同一页确认话术并关注与私信。</p></div>
+      <div class="lead-workflow-guide"><span><b>1</b> 批量 AI 判断</span><span><b>2</b> 筛选或勾选用户</span><span><b>3</b> 预检查并执行</span></div>
+      <div class="note" id="ai-decision-policy">AI 只判断“是 / 否”，理由不超过 30 字，不代表已确认需求；作品作者的问题不能算到评论者身上。</div>
+      <div id="lead-run-scope" class="scope-summary hidden"></div>
+      <div class="lead-list-panel">
+      <div class="row lead-main-bar">
+        <div class="chip-bar" id="chip-filters" aria-label="AI 判断分类">
+          <button type="button" class="chip active" data-f="all" aria-pressed="true">全部 <span data-ai-count="all">0</span></button>
+          <button type="button" class="chip" data-f="ai_todo" aria-pressed="false">待判断 <span data-ai-count="ai_todo">0</span></button>
+          <button type="button" class="chip" data-f="ai_yes" aria-pressed="false">建议联系 <span data-ai-count="ai_yes">0</span></button>
+          <button type="button" class="chip" data-f="ai_no" aria-pressed="false">不建议 <span data-ai-count="ai_no">0</span></button>
+          <button type="button" class="chip" data-f="ai_stale" aria-pressed="false">待重判 <span data-ai-count="ai_stale">0</span></button>
+          <button type="button" class="chip" data-f="ai_excluded" aria-pressed="false" title="作品作者与空评论单独保留，不计入待判断">不参与判断 <span data-ai-count="ai_excluded">0</span></button>
+        </div>
+        <div class="lead-actions">
+          <button id="btn-ai-start" class="normal">批量 AI 判断<span id="ai-pending"></span></button>
+          <div class="lead-export-controls"><label for="lead-export-scope">导出范围</label><select id="lead-export-scope"><option value="filters">当前筛选</option><option value="selected">已勾选</option><option value="all">全部线索</option></select><button id="btn-export" class="normal">导出 Excel</button></div>
+        </div>
+      </div>
+      <div class="row lead-filter-row">
+        <label for="lead-comment-days">评论时间</label><select id="lead-comment-days"><option value="7" selected>一周内</option><option value="3">3 天内</option><option value="1">1 天内</option><option value="0">全部时间</option></select>
+        <input id="lead-q" type="search" aria-label="搜索用户、作品或评论" placeholder="搜索用户、作品、评论">
+      </div>
+      <div class="chip-bar lead-status-chips" id="chip-status" aria-label="联系状态">
+        <button type="button" class="chip active" data-s="">全部状态</button>
+        <button type="button" class="chip" data-s="new">未处理</button>
+        <button type="button" class="chip" data-s="followed">已关注</button>
+        <button type="button" class="chip" data-s="dm_sent">已私信</button>
+        <button type="button" class="chip" data-s="dm_pending">待核验</button>
+        <button type="button" class="chip" data-s="followed_dm">已关注+已私信</button>
+        <button type="button" class="chip" data-s="no_dm">无法私信</button>
+        <button type="button" class="chip" data-s="replied">已回复</button>
+        <button type="button" class="chip" data-s="do_not_contact">不再联系</button>
+        <button type="button" class="chip" data-s="dm_failed">私信失败</button>
+        <button type="button" class="chip" data-s="follow_failed">关注失败</button>
+      </div>
+      <label class="row lead-rejudge"><input id="ai-force-rejudge" type="checkbox"> 本次重新判断已有有效结果（默认只处理未判断和旧结果）</label>
+      <div class="row lead-selection-row">
+        <label for="act-account">执行账号</label><select id="act-account"></select>
+        <span id="scope-display" class="hint" role="status">执行范围：—</span>
+      </div>
+      <div class="row lead-count-row">
+        <span id="filter-count" class="hint" role="status"></span>
+        <span id="selection-count" class="hint" role="status"></span>
+        <button id="btn-clear-selection" class="normal" title="清空所有已勾选的线索">清空勾选</button>
+      </div>
+      <div id="ai-task-status" class="task-box hidden" role="status" aria-live="polite"></div>
+      <div id="lead-action-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+      <div class="panel task-entry" id="outreach-entry">
+        <div class="panel-heading"><h3>确认本次联系内容</h3></div>
+        <div class="row"><label for="act-mode">执行模式</label><select id="act-mode"><option value="single">单账号</option><option value="distribution">多账号私信分发</option></select><span class="hint">多账号模式：采集归采集，私信按各账号配额自动分摊轮转</span></div>
+        <div id="distribution-box" class="hidden" style="margin-top:12px">
+          <div class="panel-heading" style="margin:6px 0"><h4>私信账户池（勾选=参与，↑↓=轮转顺序）</h4></div>
+          <div id="distribution-pool" class="distribution-pool"></div>
+          <div class="row" style="margin-top:10px">
+            <button id="btn-dist-preview" class="normal">生成分发方案</button>
+            <button id="btn-dist-start" class="primary">开始分发</button>
+            <button id="btn-task-stop5" class="danger">停止任务</button>
+            <span id="dist-unsaved" class="hint" role="status"></span>
+          </div>
+          <div id="dist-summary" class="note"></div>
+        </div>
+        <div class="action-switches"><label class="inline-check"><input id="a-fol-enabled" type="checkbox"> 关注</label><label class="inline-check"><input id="a-dm-enabled" type="checkbox"> 私信并发送消息</label></div>
+        <label class="field-block" for="a-dm-template">私信话术 <span class="hint">支持 {昵称}、{评论内容}、{属地}</span></label><textarea id="a-dm-template" rows="3" placeholder="填写要发送给用户的消息"></textarea>
+        <div class="note">已关注用户只做需要的私信；已私信用户默认只补关注。AI 有效判断为“是”或已人工批准的线索才能进入名单。</div>
+        <div class="task-action-bar"><button id="btn-outreach-start" class="primary">预检查关注与私信</button><button id="btn-task-stop2" class="danger">停止任务</button><span id="action-unsaved" class="hint" role="status"></span></div>
+        <div id="action-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+        <details class="auxiliary-actions"><summary>只执行一种动作</summary><div class="row"><button id="btn-follow-start" class="normal">仅关注 · 预检查</button><button id="btn-dm-start" class="normal">仅私信 · 预检查</button></div></details>
+      </div>
+      <div class="panel task-progress-panel"><div class="panel-heading"><h3>执行进度</h3><button class="normal" data-goto="logs">查看步骤日志</button></div><div id="act-user-summary" class="current-user hidden"></div><div id="act-stage-flow" class="action-stage-flow" aria-label="当前用户执行阶段"></div><div id="act-status" class="task-box" role="status" aria-live="polite">等待预检查</div><div id="dist-progress" class="task-box hidden" role="status" aria-live="polite"></div><div class="note">结果分为确认成功、确认失败和待核验。点击发送但尚未取得可靠回执时显示“待核验”，人工确认前不会自动重发。</div></div>
+      <div class="pacing-summary"><div><strong>已保存的用户切换节奏</strong><p id="action-pacing-summary">用户之间 10 秒 ±40%；同一主页内连续完成操作</p></div><button class="normal" data-goto="settings" data-focus="pacing-settings">调整节奏</button></div>
+      <details class="panel task-options" id="action-options"><summary>每日上限与重复联系规则</summary><div class="grid"><label>每日关注尝试上限<input id="a-fol-limit" type="number" min="1" max="300"></label><label>每日私信尝试上限<input id="a-dm-limit" type="number" min="1" max="200"></label><label><input id="a-dm-skip" type="checkbox"> 不给作品作者发私信</label></div><div class="note">每日限额是本软件的任务上限。已回复、不再联系和待核验用户不会自动重发。</div><div class="grid"><label><input id="a-dm-repeat" type="checkbox"> 允许再次联系已私信用户</label><label>重复联系至少间隔（天）<input id="a-dm-repd" type="number" min="1" max="365"></label></div><div class="row"><button id="btn-save-act" class="normal">保存触达配置</button><span id="act-saved" class="ok-hint" role="status"></span></div></details>
+      <details class="lead-field-settings"><summary>附加字段 <span id="lead-field-summary" class="hint"></span></summary><div class="note">主表合并展示用户、评论、作品、AI 判断及联系结果。原始字段保留在详情和导出中；勾选附加字段后在右侧展开，横向滚动查看。显示偏好仅保存在本机，不改变筛选或执行名单。</div><div id="lead-field-options" class="lead-field-options"></div><button id="lead-fields-reset" class="normal">恢复默认主表</button></details>
+      <div class="table-wrap lead-table-wrap">
+        <table id="lead-table" class="tbl sortable lead-table">
+          <thead><tr id="lead-head"><th><input id="lead-select-all" type="checkbox" aria-label="勾选当前可见线索"></th><th>正在载入数据字段</th></tr></thead>
+          <tbody id="lead-list"></tbody>
+        </table>
+      </div>
+      <p class="lead-table-note">点击评论或作品查看全文 · 默认每格最多 2 行 · 右侧附加字段可横向滚动查看</p>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section id="page-settings" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">PREFERENCES</div><h2>设置</h2><p>任务节奏统一在这里调整。业务与 AI 规则用于判断评论用户，账号及本机数据独立保留。</p></div>
+      <div class="panel">
+        <h3>授权与数据</h3>
+        <div class="license-summary"><span id="lic-status" class="badge b-followed">授权状态</span><span>账户 <b id="lic-username">—</b></span><span>到期时间 <b id="lic-expiry">—</b></span></div>
+        <dl class="license-details">
+          <div><dt>本机 MAC 地址</dt><dd id="lic-mac">—</dd></div>
+          <div><dt>服务器时间</dt><dd id="lic-servertime">—</dd></div>
+          <div><dt>本机数据目录</dt><dd id="lic-datadir">—</dd></div>
+        </dl>
+        <div class="note">账户授权通过 HTTPS 校验；每次对外操作前检查授权。授权失效后暂停任务，停止按钮始终可用。</div>
+        <div id="lic-user-box" class="hidden" style="margin-top:12px">
+          <h4>修改授权账户密码</h4>
+          <div class="row">
+            <input id="lu-old" type="password" placeholder="当前密码" style="width:180px">
+            <input id="lu-new" type="password" placeholder="新密码" style="width:180px">
+            <button id="btn-lu-change" class="normal">修改密码</button>
+            <span id="lu-msg" class="ok-hint"></span>
+          </div>
+        </div>
+      </div>
+      <div class="panel" id="pacing-settings"><div class="panel-heading"><h3>任务节奏</h3><span class="badge b-intent">只在三处安排间隔</span></div><div class="pacing-editor">
+        <fieldset><legend>评论翻页</legend><p>当前作品的评论列表请求下一页</p><label>基准（秒）<input id="c-col-interval" type="number" min="0" max="30" step="0.1"></label><label>随机抖动（%）<input id="c-col-jitter" type="number" min="0" max="90" step="1"></label><div id="pacing-scroll-range" class="note"></div></fieldset>
+        <fieldset><legend>切换作品</legend><p>一个作品处理后，进入下一个链接</p><label>基准（秒）<input id="c-col-linkint" type="number" min="0" max="3600" step="0.1"></label><label>随机抖动（%）<input id="c-col-linkjit" type="number" min="0" max="90" step="1"></label><div id="pacing-work-range" class="note"></div></fieldset>
+        <fieldset><legend>切换用户</legend><p>本用户操作完成后，进入下一主页</p><label>基准（秒）<input id="a-user-interval" type="number" min="0" max="3600" step="0.1"></label><label>随机抖动（%）<input id="a-user-jitter" type="number" min="0" max="90" step="1"></label><div id="pacing-user-range" class="note"></div></fieldset>
+        <fieldset><legend>私信强制休息</legend><p>每成功发送 N 条私信后，强制随机休息（防平台"私信频繁"）</p><label>每发送几条后休息<input id="a-dm-pause-count" type="number" min="1" max="200"></label><label>最短休息（秒）<input id="a-dm-pause-min" type="number" min="5" max="86400"></label><label>最长休息（秒）<input id="a-dm-pause-max" type="number" min="5" max="86400"></label><div id="pacing-dm-pause-range" class="note"></div></fieldset>
+        <fieldset><legend>关键词搜索节奏</legend><p>搜索页风控敏感，关键词之间强制间隔</p><label>关键词间隔（秒）<input id="s-search-interval" type="number" min="10" max="86400"></label><label>间隔抖动（%）<input id="s-search-jitter" type="number" min="0" max="90" step="1"></label><label>每日搜索上限<input id="s-search-daily" type="number" min="1" max="200"></label><div id="pacing-search-range" class="note"></div></fieldset>
+      </div><div class="row"><label for="s-hu-errors">连续异常暂停阈值</label><input id="s-hu-errors" type="number" min="1" max="20" style="width:100px"></div><div class="note">同一用户主页内连续完成关注、打开私信、填写和发送。仍等待页面、控件及必要响应就绪，每次对外操作前检查授权。正常 AI 批次连续执行；不叠加定期休息、工作时段或旧动作间隔。填 0 只取消额外间隔；间隔数值不代表平台安全额度。</div><div class="row"><button id="btn-save-pacing" class="primary">保存任务节奏</button><button id="btn-pacing-defaults" class="normal">填入默认节奏</button><span id="pacing-saved" class="ok-hint" role="status"></span></div></div>
+      <div class="panel">
+        <h3>DeepSeek 判断服务</h3>
+        <div class="grid">
+          <label><input id="s-ai-enabled" type="checkbox"> 启用 AI 判断</label>
+          <label>API Key <input id="s-ai-key" type="password" placeholder="填写您的 DeepSeek API Key" autocomplete="off"></label>
+          <label>使用模型 <select id="s-ai-model" aria-label="DeepSeek 模型"></select></label>
+          <div class="row model-controls"><button id="btn-ai-models" class="normal">刷新官方模型</button><span id="ai-model-msg" class="hint" role="status"></span></div>
+        </div>
+        <div class="note">模型列表从 DeepSeek 官方实时获取。先保存 API Key，再刷新模型；不会自动把已选模型替换为其他模型。</div>
+        <details class="advanced-settings"><summary>AI 批量预算与超时</summary><div class="grid">
+          <label>组批方式<select id="s-ai-batch-mode"><option value="auto">自动预算与失败降档</option><option value="manual">手动字符预算和条数</option></select></label>
+          <label>手动：每批目标输入字符预算<input id="s-ai-bchars" type="number" min="500" max="60000"></label>
+          <label>手动：每批最大条数<input id="s-ai-bcount" type="number" min="1" max="10000"></label>
+          <label>请求超时（秒）<input id="s-ai-timeout" type="number" min="5" max="120"></label>
+        </div><div class="note">AI 各批顺序连续执行，不叠加浏览器操作间隔。超时或回执失败逐档降预算；限流、网络或服务器临时故障有限重试；可随时停止。</div><div class="row"><button id="btn-ai-batch-recommended" class="normal" type="button">使用自动组批</button><span id="ai-batch-msg" class="hint" role="status">自动组批：75% → 50% → 30% → 每批最多 200 条。预算包含完整介绍、要求、评论、作品与返回预留；剩余任务沿用降档结果，每批成功后保存并继续。200 条兜底仍受 75% 容量上限约束，失败暂停并保留未判。实际用量以服务器返回为准。</span></div></details>
+      </div>
+      <div class="panel">
+        <h3>业务与判断提示词</h3>
+        <div class="ai-workspace">
+          <div class="business-column">
+            <div class="section-kicker">1 · 描述业务</div>
+            <label class="field-block">公司业务<textarea id="s-ai-biz" rows="3" placeholder="提供哪些产品或服务"></textarea></label>
+            <label class="field-block">目标客户<textarea id="s-ai-target" rows="3" placeholder="哪些人需要这些服务"></textarea></label>
+            <label class="field-block">明确需求<textarea id="s-ai-needs" rows="3" placeholder="哪些评论表示真实需求"></textarea></label>
+            <label class="field-block">容易误判<textarea id="s-ai-misjudgments" rows="3" placeholder="例如：可以处理的＝回答作者；可以处理吗＝求助。不要把作者的问题当成评论者需求，也不要猜测同行身份。"></textarea></label>
+            <div class="row"><button id="btn-ai-draft" class="primary">AI 生成提示词</button><button id="btn-ai-industry-default" class="normal" type="button">填入优化行业预设</button></div><div id="ai-draft-msg" class="note" role="status">生成依据左侧四项；行业预设直接填入当前编辑槽与业务、关键词草稿。保存后生效。</div>
+          </div>
+          <div class="prompt-column">
+            <div class="section-kicker">2 · 编辑预设并选择使用</div>
+            <div id="prompt-slots" class="prompt-slots"></div>
+            <div id="ai-active-summary" class="note active-prompt-summary" role="status"></div>
+            <div id="ai-prompt-warning" class="note hidden" role="status"></div>
+            <label class="field-block">预设名称<input id="s-ai-prompt-name" maxlength="80" placeholder="为这版规则命名"></label>
+            <label class="field-block"><span id="ai-editor-title">正在编辑提示词</span><textarea id="s-ai-prompt" rows="15" placeholder="填写判断规则，或点击左侧 AI 生成提示词"></textarea></label>
+            <div id="ai-generated-draft-panel" class="generated-draft hidden">
+              <div id="ai-generated-draft-summary" class="note"></div>
+              <textarea id="ai-generated-draft" rows="5" readonly aria-label="待人工应用的生成提示词"></textarea>
+              <div class="row"><button id="btn-ai-generated-apply" class="normal">应用到原预设</button><button id="btn-ai-generated-dismiss" class="normal">丢弃这份草稿</button></div>
+            </div>
+            <details class="fixed-fields"><summary>每条评论传入的固定字段</summary><pre>【用户评论】{需求内容}
+【评论时间】{评论时间}
+【用户UID】{UID}
+【用户名称】{昵称}
+【所在视频描述】{视频描述}</pre></details>
+            <div class="note">单条、批量和样例测试共用同一规则，只返回“是 / 否”与 30 字以内理由。先分清“寻求帮助”和“给作者办法”，不能仅因业务相关或没有拒绝就判“是”。理由只写评论证据。生成提示词只发送左侧业务内容；修改规则后旧结果需重判，历史评分保留供查阅。</div>
+          </div>
+        </div>
+        <details class="prompt-draft-panel">
+          <summary>高级：用匿名样例测试当前编辑的提示词</summary>
+          <label>匿名评论样例（一行一条）</label><textarea id="s-ai-samples" rows="3" placeholder="最多 20 条，请去掉姓名、账号和联系方式"></textarea>
+          <div class="row"><button id="btn-ai-test" class="normal">测试当前提示词</button></div>
+          <div id="ai-test-results" class="sample-results"></div>
+          <div class="note">生成和测试会调用已保存的模型。它们不会启用规则；请选择一个使用预设，点击「保存设置」后生效。</div>
+        </details>
+      </div>
+      <div class="panel">
+        <h3>关键词设置</h3>
+        <label>候选关键词（逗号分隔，用于简单筛查）</label>
+        <textarea id="s-kw-intent" rows="2"></textarea>
+        <label>排除候选关键词（仅初筛，逗号分隔）</label>
+        <textarea id="s-kw-exclude" rows="2"></textarea>
+        <div class="note">保存关键词会同步重算已有线索的初筛标记，保留 AI 和联系记录。没有触发词的线索也能在「全部」范围进行 AI 判断；AI 有效结果始终优先。不要把「服务商」「广告」「成功案例」等泛词用作排除词，避免漏掉真实求助。</div>
+      </div>
+      <div class="settings-save-bar"><div><strong>保存后应用当前选择</strong><span>三份预设都保留，判断只使用您选择的一份</span></div><button id="btn-save-settings" class="primary">保存设置</button><span id="settings-saved" class="ok-hint" role="status"></span></div>
+    </section>
+
+    <!-- 日志 -->
+    <section id="page-logs" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">ACTIVITY</div><h2>操作日志</h2><p>查看任务进度、执行结果与需要人工处理的提示。</p></div>
+      <div class="row"><label>账号</label><select id="log-account"></select><button id="btn-refresh-log" class="normal">刷新</button></div>
+      <pre id="log-box" class="log-box"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

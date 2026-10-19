@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>华贸授权管理</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="login-view" class="login-layout">
+    <section class="login-intro" aria-label="管理系统介绍">
+      <a class="brand" href="./"><span class="brand-icon" aria-hidden="true">H</span><span>华贸<span class="brand-sub">授权管理</span></span></a>
+      <div class="login-copy"><p class="eyebrow">独立管理工作台</p><h1>把客户授权，<br>管理得简单一点。</h1><p>开通账户、续期和更换电脑，<br>在这里就能完成。</p><div class="intro-points"><span><i aria-hidden="true">✓</i> 账户状态一目了然</span><span><i aria-hidden="true">✓</i> 每次管理操作都有记录</span><span><i aria-hidden="true">✓</i> 管理入口与客户软件独立</span></div></div>
+      <p class="login-footer">华贸 · 抖音获客授权系统</p>
+    </section>
+    <main class="login-main">
+      <form id="login-form" class="login-card">
+        <span class="login-mark" aria-hidden="true">↗</span><h2>管理员登录</h2><p class="muted">使用管理账户进入工作台</p>
+        <label for="login-username">管理账户</label><input id="login-username" name="username" type="text" value="admin" autocomplete="username" required maxlength="80">
+        <label for="login-password">登录密码</label><div class="password-field"><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="256"><button type="button" id="login-show-password" class="reveal" aria-label="显示密码" aria-pressed="false">显示</button></div>
+        <p id="login-error" class="inline-error" role="alert" hidden></p>
+        <button id="login-submit" type="submit" class="button primary wide">登录管理系统 <span aria-hidden="true">→</span></button>
+        <div class="login-help"><span aria-hidden="true">ⓘ</span><p>这里管理客户的软件使用权限。<br><strong>客户账户请在独立客户端登录。</strong></p></div>
+      </form>
+    </main>
+  </div>
+
+  <div id="app-view" class="app-layout" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="./"><span class="brand-icon" aria-hidden="true">H</span><span>华贸<span class="brand-sub">授权管理</span></span></a>
+      <nav class="nav-list" aria-label="管理页面"><button class="nav-item selected" id="nav-accounts" type="button" aria-current="page"><span aria-hidden="true">▦</span> 客户账户</button><button class="nav-item" id="nav-audit" type="button"><span aria-hidden="true">◷</span> 操作记录</button></nav>
+      <div class="sidebar-note"><span class="status-dot" aria-hidden="true"></span><strong>独立管理入口</strong><p>管理权限仅由管理员持有，<br>客户软件不包含此入口。</p></div>
+      <div class="profile"><div class="avatar" aria-hidden="true">管</div><div><strong id="admin-name">管理员</strong><span>管理账户</span></div><button id="logout-button" type="button" aria-label="退出登录" title="退出登录">退出登录</button></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar"><span>工作台 <span class="crumb-divider" aria-hidden="true">/</span> <strong id="page-location">客户账户</strong></span><span class="security-label"><span aria-hidden="true">●</span> 加密连接</span></header>
+      <div class="content">
+        <div id="session-message" class="notice warning" role="alert" hidden></div>
+        <section id="accounts-view">
+          <div class="page-heading"><div><p class="eyebrow">授权管理工作台</p><h1>客户账户</h1><p>查看授权期限、完整 MAC 地址，管理客户的使用权限。</p></div><button class="button primary" id="create-button" type="button"><span aria-hidden="true">＋</span> 开通账户</button></div>
+          <div class="summary-grid" aria-label="账户统计"><article class="summary-card"><div class="summary-label">全部账户<span class="summary-symbol blue" aria-hidden="true">▦</span></div><strong id="stat-total">—</strong><span>已开通的软件账户</span></article><article class="summary-card"><div class="summary-label">可用账户<span class="summary-symbol green" aria-hidden="true">✓</span></div><strong id="stat-active">—</strong><span>已启用且在有效期内</span></article><article class="summary-card"><div class="summary-label">7 天内到期<span class="summary-symbol amber" aria-hidden="true">◷</span></div><strong id="stat-expiring">—</strong><span>及时续期，保持使用</span></article><article class="summary-card"><div class="summary-label">已停用 / 已到期<span class="summary-symbol gray" aria-hidden="true">–</span></div><strong id="stat-unavailable">—</strong><span>当前无法使用客户端</span></article></div>
+          <div id="operation-result" class="notice success" role="status" hidden><span id="operation-result-text"></span><button id="dismiss-result" type="button" aria-label="关闭操作结果">×</button></div>
+          <section class="panel accounts-panel" aria-labelledby="accounts-title"><div class="panel-heading"><div><h2 id="accounts-title">账户列表 <span id="account-count" class="count-pill">0</span></h2><p>新账户首次登录客户端时，会自动绑定使用的电脑。</p></div><button id="refresh-button" class="button subtle small" type="button"><span aria-hidden="true">↻</span> 刷新</button></div>
+            <div class="table-toolbar"><label class="search-box"><span aria-hidden="true">⌕</span><input id="account-search" type="search" placeholder="搜索账户、备注或 MAC 地址" aria-label="搜索账户、备注或 MAC 地址" maxlength="200"></label><label class="filter-label">账户状态<select id="account-filter" aria-label="筛选账户状态"><option value="all">全部状态</option><option value="active">可用</option><option value="expiring">7 天内到期</option><option value="disabled">已停用</option><option value="expired">已到期</option></select></label><span id="filtered-count" class="filtered-count" aria-live="polite"></span></div>
+            <div class="table-scroll" tabindex="0" aria-label="客户账户列表"><table class="account-table"><thead><tr><th scope="col">客户账户</th><th scope="col">授权状态</th><th scope="col">到期日期</th><th scope="col">MAC 地址 / 绑定电脑</th><th scope="col">备注</th><th scope="col" class="actions-col">操作</th></tr></thead><tbody id="account-table-body"></tbody></table></div>
+            <div id="accounts-empty" class="empty-state" hidden><span aria-hidden="true">▦</span><h3 id="empty-title">还没有客户账户</h3><p id="empty-description">点击右上角“开通账户”，创建第一个客户的软件使用权限。</p></div>
+            <p id="accounts-error" class="panel-error" role="alert" hidden></p><div class="table-footer"><span id="table-footer-count">正在读取账户…</span><span>授权日期按北京时间计算</span></div>
+          </section>
+          <section class="help-strip"><span class="help-icon" aria-hidden="true">ⓘ</span><div><strong>常用操作</strong><p><b>详情</b> 查看完整 MAC 地址及备注；<b>续期 / 编辑</b> 调整有效期；<b>更多操作 → 更换电脑</b> 清除旧绑定；<b>停用</b> 暂停客户的软件使用权限。</p></div></section>
+        </section>
+        <section id="audit-view" hidden><div class="page-heading"><div><p class="eyebrow">管理操作核对</p><h1>操作记录</h1><p>查看最近的账户管理操作，方便核对变更。</p></div><button id="audit-refresh" type="button" class="button subtle"><span aria-hidden="true">↻</span> 刷新记录</button></div><section class="panel audit-panel"><div class="panel-heading"><div><h2>最近操作</h2><p>记录不包含登录密码或客户密码。</p></div></div><ol id="audit-list" class="audit-list"></ol><div id="audit-empty" class="empty-state" hidden><span aria-hidden="true">◷</span><h3>暂无操作记录</h3><p>完成账户管理操作后，记录会显示在这里。</p></div><p id="audit-error" class="panel-error" role="alert" hidden></p></section></section>
+        <footer class="workspace-footer">华贸授权管理 <span>客户使用权限 · 独立管理</span></footer>
+      </div>
+    </main>
+  </div>
+  <dialog id="account-dialog" aria-labelledby="dialog-title"><form id="account-form"><div class="dialog-heading"><div><p id="dialog-eyebrow" class="eyebrow">账户管理</p><h2 id="dialog-title">开通账户</h2></div><button id="dialog-close" class="icon-button" type="button" aria-label="关闭弹窗">×</button></div><p id="dialog-description" class="dialog-description"></p><div id="dialog-fields"></div><p id="dialog-error" class="inline-error" role="alert" hidden></p><div class="dialog-actions"><button id="dialog-cancel" type="button" class="button subtle">取消</button><button id="dialog-submit" type="submit" class="button primary">确认开通</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

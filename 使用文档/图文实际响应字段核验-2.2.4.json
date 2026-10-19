@@ -1,0 +1,42 @@
+{
+  "checkedDate": "2026-10-08",
+  "workUrl": "https://www.douyin.com/note/7693579483274183025",
+  "workId": "7693579483274183025",
+  "observedIn": "独立匿名浏览器中的实际作品页面，未使用当前正在采集的账号资料",
+  "detailSource": "HTTP 文档流式渲染数据 self.__pace_f.push 中的 JSON 行",
+  "observedDetailPath": "本次文档 JSON 行 7[3].aweme.detail；行编号可能随页面变化",
+  "fields": {
+    "workId": "awemeId",
+    "workType": "awemeType",
+    "description": "desc",
+    "imageList": "images[]",
+    "imageAddressCandidates": "images[i].urlList[]",
+    "downloadAddressCandidates": "images[i].downloadUrlList[]",
+    "imageWidth": "images[i].width",
+    "imageHeight": "images[i].height",
+    "imageIdentifier": "images[i].uri"
+  },
+  "description": "可以解决 有通过案例的来。亚马逊协议三侵权",
+  "awemeType": 68,
+  "mediaType": 2,
+  "imageCount": 1,
+  "images": [
+    {
+      "index": 0,
+      "width": 1248,
+      "height": 1456,
+      "uri": "tos-cn-i-0813c000-ce/okoBRAlAiDqAIaiw12HAcFofOr7eCWAYFEEtXL",
+      "urlListCandidateCount": 2,
+      "urlListCandidateFormats": ["webp", "jpeg"],
+      "urlListHost": "p3-pc-sign.douyinpic.com",
+      "urlListPathWithoutQuery": "/tos-cn-i-0813c000-ce/okoBRAlAiDqAIaiw12HAcFofOr7eCWAYFEEtXL~tplv-dy-aweme-images:q75.webp",
+      "downloadUrlListCandidateCount": 2,
+      "downloadUrlListCandidateFormats": ["webp", "jpeg"],
+      "downloadUrlListWatermarkMarker": "tplv-dy-water-v2",
+      "video": null
+    }
+  ],
+  "linkNotes": "图片完整地址含 x-expires、x-signature 等动态查询字段；此文档只保留无查询参数的地址结构，程序不复发或复用它们。",
+  "rawApiNamingReference": "普通原始详情 API 常用 aweme_id 和 images[i].url_list；本次实际网页渲染响应使用 awemeId 和 images[i].urlList。",
+  "limitations": "本次核验只记录该作品已载入文档中的字段，不声称已获取其单独详情 API，也没有下载图片或识别图片内文字。"
+}

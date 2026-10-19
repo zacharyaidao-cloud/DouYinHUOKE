@@ -1,0 +1,17 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const assert = require('assert/strict');
+const ROOT = path.resolve(__dirname, '..');
+const source = path.join(ROOT, 'license-server', 'client-config.huamao.json');
+const cfg = JSON.parse(fs.readFileSync(source, 'utf8').replace(/^\uFEFF/, ''));
+const liveKey = fs.readFileSync(path.join(ROOT, 'license-server', 'publickey-live.pem'), 'utf8').replace(/^\uFEFF/, '');
+assert(/^\s*-----BEGIN PUBLIC KEY-----/.test(cfg.publicKey) && !/PRIVATE KEY/.test(cfg.publicKey));
+const configured = crypto.createPublicKey(cfg.publicKey), live = crypto.createPublicKey(liveKey);
+assert(configured.asymmetricKeyType === 'rsa' && live.asymmetricKeyType === 'rsa');
+const fingerprint = key => crypto.createHash('sha256').update(key.export({ type: 'spki', format: 'der' })).digest('hex');
+assert.equal(fingerprint(configured), fingerprint(live), '配置公钥须与已审计线上公钥一致');
+const trusted = { enabled: true, serverUrl: 'https://huamao.xyz/dy-license', allowedHosts: ['huamao.xyz'], publicKey: live.export({ type: 'spki', format: 'pem' }) };
+fs.writeFileSync(source, JSON.stringify(trusted, null, 2), 'utf8');
+fs.writeFileSync(path.join(ROOT, 'dy-lead-app', 'trusted-license.json'), JSON.stringify(trusted, null, 2), 'utf8');
+console.log('PASS: 正式域名前缀公开配置已同步；RSA 公钥指纹 ' + fingerprint(live) + '；授权公网仍待验收');

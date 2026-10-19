@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "serverUrl": "https://license.example.com",
+  "allowedHosts": ["license.example.com"],
+  "publicKey": "粘贴现有授权服务器公钥，保留原密钥对以兼容既有账户"
+}

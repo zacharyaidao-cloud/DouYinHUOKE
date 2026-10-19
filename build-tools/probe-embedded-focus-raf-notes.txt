@@ -1,0 +1,38 @@
+Electron 44.6.0 / Chromium 152.0.7977.130 隐藏页 rAF 独立探针
+日期：2026-10-09
+
+范围：只访问本机 HTTP 夹具，独立临时 Electron userData/session，无真实平台、客户数据、生产代码修改。
+脚本：build-tools/probe-embedded-focus-raf.js，基于现有 prototype-embedded-cdp.js 的隔离 CDP relay。
+条件：BrowserWindow show:false，WebContentsView setVisible(false)，backgroundThrottling:false，about:blank 后显式 setBackgroundThrottling(false)。Playwright 1.63.0 连接已有唯一页面。
+采样：原生 requestAnimationFrame 有限三帧，2600ms 截止并取消，测量间停止采样；不替换 rAF，不 force 点击。
+
+决定性对照：
+1. 不填字、不 focus、不 inputValue，空闲5秒仍60fps；三帧30.9ms，原生click71ms。
+   qa-probe-focus-raf-uwHKwF/result.json
+2. 仅 inputValue，不填字不focus，5秒后三帧29.9ms，click30ms。
+   qa-probe-focus-raf-z2N5Qo/result.json
+3. 仅 locator.focus()，没有 Input.insertText，也不调用 inputValue；5秒后三帧2119.8ms，各帧约1000–1017ms，click1856ms。
+   qa-probe-focus-raf-WMWxys/result.json
+4. fill后复现同样1fps。此独立 relay 没有 host layout/Target.activateTarget，排除了这些路径作为必要触发条件。
+   qa-probe-focus-raf-NGvnIA/result.json
+
+恢复对照：
+Emulation.setFocusEmulationEnabled(false/true)、wc.focus、重复 setBackgroundThrottling(false)、true→false、仅show view(父window保持hidden)、重复hide均无效。
+wc.invalidate、相同bounds重设、DOM activeElement.blur、父window.webContents.setBackgroundThrottling(false)均无效。
+wc.blur在本次Electron没有该方法；window.webContents.focus()亦不恢复。
+始终可观察到 document.visibilityState=visible、document.hasFocus=true，而原生wc.isFocused=false，getBackgroundThrottling=false。
+
+wc.beginFrameSubscription(()=>{}) 能将三帧恢复到24.2ms；当场endFrameSubscription后短样本仍23.7ms，原生click21ms。
+但100ms begin/end脉冲不是永久恢复：立即三帧34.9ms；结束后再空闲5秒又1fps，再次fill也仍1fps，原生click1818ms。
+短脉冲边界：qa-probe-focus-raf-yJCAtG/result.json。
+因此只能确认原生捕获会改变底层帧调度，不能据短样本宣称已修复。持续订阅会接收NativeImage且有捕获成本；本探针未将它加入产品。
+
+结论：本机已证明可编辑输入框DOM获焦足以触发此隐藏场景降帧；读取输入值不是原因，填写文本也不是必要条件。已定位触发条件与有效/无效恢复手段，但未定位Chromium具体内部函数。不能把历史Electron issue当作44.6.0已确认的同一回归。
+
+官方参考（仅机制背景）：
+https://github.com/electron/electron/pull/38924
+  官方修复说明 backgroundThrottling 与 viz::DisplayScheduler / NativeWindow compositor 的关系。
+https://www.electronjs.org/docs/latest/api/web-contents/#contentsbeginframesubscriptiononlydirty-callback
+  beginFrameSubscription 是帧呈现/捕获订阅，回调收到 NativeImage；不是免费帧率开关。
+
+运行方式：使用 build-tools/electron-runtime-44.6.0/electron.exe 启动该脚本，清除 ELECTRON_RUN_AS_NODE；外层启动器需windowsHide:true。PROBE_IDLE_ONLY=1，PROBE_VARIANT=idle|inputValue|focus|fill；PROBE_RECOVERY=1测多项恢复，=2测原生焦点及100ms订阅脉冲持久性。结果写入各自qa-probe-focus-raf-*目录。早期外层spawnSync有退出超时，但对应性能结果已完成落盘；不将该外层超时归因于页面操作失败。

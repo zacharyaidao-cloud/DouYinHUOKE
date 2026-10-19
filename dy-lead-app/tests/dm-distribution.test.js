@@ -225,6 +225,21 @@ test('过期分配锁不再阻塞用户', async () => {
   assert.equal(result.done, 2);
 });
 
+test('新一轮分发清除上一轮未过期的残留分配锁', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 3005, count: 2 }]);
+  const rows = store.getLeads();
+  const settings = store.getSettings();
+  const key = workflow.contactKey(rows[0], settings);
+  // 上一轮中断残留的锁：未消费、未过期（刚写入、指向其他账号）
+  store.setAllocations({ [key]: { accountId: '2', kind: 'outreach', plannedAt: store.nowStr(), expiresAt: Date.now() + 3600 * 1000, consumed: false } });
+  const f = makeFixture();
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  assert.equal(result.ok, true);
+  assert.equal(result.totalCandidates, 2, '新一轮开始必须清除上一轮残留的未过期分配锁');
+  assert.equal(result.done, 2);
+});
+
 test('账号异常后本次分发内不再重复使用', async () => {
   freshSettings();
   seedLeads([1], [{ id: 3004, count: 3 }]);

@@ -197,16 +197,20 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     setTask({ kind: 'dm_distribution', distributionActive: true, running: true, accountId: String(pool[0].accountId), stage: 'allocating',
       status: '正在生成多账号分发方案', done: 0, total: 0, detail: '', errors: [], distributionSummary: { ...summary } });
     try {
+      // 新一轮分发开始：清除上一次未完成的分配锁。
+      // 引擎单任务串行，锁只在本次运行内有效；上一轮中断/停止残留的锁会把用户误判为
+      // “已分配给其他账号执行”而永久排除，必须在候选筛选之前清掉。
+      const allocations = store.getAllocations();
+      for (const key of Object.keys(allocations)) {
+        if (!allocations[key] || allocations[key].consumed !== true) delete allocations[key];
+      }
+      store.setAllocations(allocations);
+
       const candidateResult = candidates(settings, input || {});
       let unassigned = candidateResult.rows;
       const needs = candidateResult.needs;
       summary.excluded = candidateResult.excluded;
       summary.totalCandidates = unassigned.length;
-      const allocations = store.getAllocations();
-      // 清理过期/已完成的历史分配，避免一次中断让用户被永久排除。
-      for (const [key, entry] of Object.entries(allocations)) {
-        if (!entry || entry.consumed === true || workflow.allocationExpired(entry, now)) delete allocations[key];
-      }
       const allocateNow = () => {
         const { blocks, leftovers } = allocateLeads(pool, unassigned, settings, state, opDay, needs);
         const expiresAt = Date.now() + workflow.ALLOCATION_TTL_MS;

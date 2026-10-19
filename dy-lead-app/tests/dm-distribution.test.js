@@ -14,7 +14,7 @@ const store = require('../store');
 const AI = require('../ai');
 const workflow = require('../workflow');
 
-function makeFixture({ responses = {}, trackCalls = null, onSetTask = null } = {}) {
+function makeFixture({ responses = {}, trackCalls = null, onSetTask = null, guardRunning = false } = {}) {
   const taskState = { running: false, stopRequested: false, distributionActive: false, stopEpoch: 0, status: '', errors: [] };
   const setTask = patch => { Object.assign(taskState, patch); if (onSetTask) onSetTask(patch, taskState); };
   const failTask = msg => { taskState.status = msg; return { ok: false, error: msg }; };
@@ -29,6 +29,8 @@ function makeFixture({ responses = {}, trackCalls = null, onSetTask = null } = {
   const runOutreach = async (accountId, options) => {
     const key = String(accountId);
     if (trackCalls) trackCalls.push(key);
+    // 模拟真实 runTask 第一行的任务锁守卫：分发器必须先释放 running，否则每个批次都被拒
+    if (guardRunning && taskState.running) return { ok: false, error: '已有任务在运行' };
     const scripted = responses[key];
     if (Array.isArray(scripted) && scripted.length) return scripted.shift();
     return { ok: true, dmCount: lastBatchSize, pendingCount: 0, failedCount: 0, skipped: 0 };
@@ -238,6 +240,16 @@ test('新一轮分发清除上一轮未过期的残留分配锁', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.totalCandidates, 2, '新一轮开始必须清除上一轮残留的未过期分配锁');
   assert.equal(result.done, 2);
+});
+
+test('分发批次前释放 running，runTask 的任务锁守卫不再拒绝每个批次', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 3100, count: 6 }]);
+  // guardRunning 模拟真实 runTask 第一行：taskState.running 为 true 时直接返回“已有任务在运行”
+  const f = makeFixture({ guardRunning: true });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  assert.equal(result.ok, true);
+  assert.equal(result.done, 6, '每个批次都应通过守卫并执行完，而不是被“已有任务在运行”拒绝');
 });
 
 test('账号异常后本次分发内不再重复使用', async () => {

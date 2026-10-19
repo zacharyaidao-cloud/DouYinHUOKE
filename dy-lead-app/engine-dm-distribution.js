@@ -18,7 +18,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     for (const [id, entry] of Object.entries(raw || {})) {
       if (!entry || typeof entry !== 'object') continue;
       const next = { ...entry };
-      if (next.opDay !== opDay) { next.opDay = opDay; next.frequentCountToday = 0; next.frequentUntil = null; }
+      if (next.opDay !== opDay) { next.opDay = opDay; next.frequentCountToday = 0; next.frequentUntil = null; next.disabledUntil = null; }
       if (next.disabledUntil && Number(next.disabledUntil) <= now) next.disabledUntil = null;
       if (next.frequentUntil && Number(next.frequentUntil) <= now) next.frequentUntil = null;
       out[id] = next;
@@ -252,7 +252,9 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
             while (Date.now() < until) { if (stopped()) throw new TaskStopError(); await sleep(Math.min(1000, until - Date.now())); }
           }
           const batch = list.splice(0, Math.max(1, Number(settings.dm.batchPerAccount) || 5));
-          setTask({ stage: 'running_batch', status: `账号 ${(accounts.find(a => String(a.id) === accountId) || {}).name || accountId} 正在执行一批 ${batch.length} 人`, done: summary.done, total: summary.totalCandidates, currentLead: null });
+          // 分发全程由 distributionActive 占用任务槽（server.js 的 engineBusy 已读它）。
+          // 批次由 runTask 自己置位 running，这里必须先释放，否则 runTask 的守卫会拒绝本批。
+          setTask({ running: false, stage: 'running_batch', status: `账号 ${(accounts.find(a => String(a.id) === accountId) || {}).name || accountId} 正在执行一批 ${batch.length} 人`, done: summary.done, total: summary.totalCandidates, currentLead: null });
           let result;
           try {
             const plan = createPlan(accountId, 'outreach', { follow: true, dm: true, leadIds: batch.map(l => String(l.id)), crossAccount: true, dmTemplate: item.template, owner: 'distribution' });

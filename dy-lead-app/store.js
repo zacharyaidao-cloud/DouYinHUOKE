@@ -290,25 +290,20 @@ function opDayStr() {
   } catch (e) { return todayStr(); }
 }
 
-/** 明日早 dailyResetHour 点的本地绝对时刻（毫秒），用于"今日停用"截止 */
-function nextResetMs() {
+/** 下一个 dailyResetHour 点的本地绝对时刻（毫秒），用于"今日停用"截止 */
+function nextResetMs(now = Date.now()) {
   try {
     const settings = getSettings();
     const resetHour = Math.min(23, Math.max(0, Math.floor(Number(settings.dm && settings.dm.dailyResetHour) || 8)));
     const timeZone = settings.human && settings.human.timeZone || 'Asia/Shanghai';
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(p => [p.type, p.value]));
-    // 今天本地日期在 resetHour 的 UTC 时刻近似 = Date.UTC(今天, resetHour) - 本地时区偏移
-    const nowUtc = Date.now();
-    const probe = new Date(nowUtc);
-    const localParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(probe).map(p => [p.type, p.value]));
-    const localMin = Number(localParts.hour) * 60 + Number(localParts.minute);
-    const utcMin = probe.getUTCHours() * 60 + probe.getUTCMinutes();
-    let diff = localMin - utcMin;
-    if (diff > 720) diff -= 1440;
-    if (diff < -720) diff += 1440;
-    const localOffsetMs = diff * 60000;
-    const todayResetUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), resetHour, 0, 0) - localOffsetMs;
-    return todayResetUtc + 86400000;
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+    const p = Object.fromEntries(fmt.formatToParts(new Date(now)).map(x => [x.type, x.value]));
+    const localAsUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    const offset = localAsUtc - Math.floor(now / 1000) * 1000; // 该时区相对 UTC 的偏移
+    let target = Date.UTC(+p.year, +p.month - 1, +p.day, resetHour, 0, 0) - offset;
+    if (target <= now) target += 86400000;
+    return target;
   } catch (e) { return Date.now() + 86400000; }
 }
 

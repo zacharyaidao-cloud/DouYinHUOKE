@@ -207,7 +207,7 @@ function renderEmbeddedBrowser() {
   $('browser-url').value = selected && selected.url || '';
   $('browser-page-status').textContent = selected ? selected.name + ' · ' + (selected.loading ? '网页加载中…' : selected.title || '账号网页') : embeddedPendingId ? '正在打开账号浏览器…' : '尚未打开账号浏览器';
   const task = state && state.task;
-  $('browser-task-status').textContent = task && task.running ? '任务进行中 · ' + (task.status || '正在处理') : '任务空闲';
+  $('browser-task-status').textContent = taskActive(task) ? '任务进行中 · ' + (task.status || '正在处理') : '任务空闲';
   $('browser-task-status').title = $('browser-task-status').textContent;
   $('browser-upgrade-note').classList.toggle('hidden', !embeddedBrowser || embeddedIntroDismissed);
   $('browser-error').classList.toggle('hidden', !embeddedBrowserError);
@@ -340,12 +340,14 @@ function taskProgressMarkup(task) {
   const meter = total > 0 ? '<div class="task-meter" role="progressbar" aria-label="任务进度" aria-valuemin="0" aria-valuemax="' + total + '" aria-valuenow="' + done + '"><span style="width:' + Math.min(100, done / total * 100) + '%"></span></div>' : '';
   return (stage ? '<div class="task-stage-label">当前阶段 · ' + esc(stage) + '</div>' : '') + waiting + meter;
 }
+function taskActive(task) { return !!(task && (task.running || task.distributionActive)); }
 function renderTask(elId, task) {
   const el = $(elId); if (!el) return;
-  el.className = 'task-box' + (task && task.running ? ' running' : '');
+  const active = taskActive(task);
+  el.className = 'task-box' + (active ? ' running' : '');
   const total = Number(task && (task.total || task.totalUsers) || 0);
   const progress = total ? '（' + esc(task.done || 0) + '/' + esc(total) + '）' : '';
-  el.innerHTML = (task && task.running ? '进行中 · ' : '') + esc(task && task.status || '等待开始任务') + progress + (task && task.detail ? '<div class="task-detail">' + esc(task.detail) + '</div>' : '') + taskProgressMarkup(task) + renderAiBudget(task);
+  el.innerHTML = (active ? '进行中 · ' : '') + esc(task && task.status || '等待开始任务') + progress + (task && task.detail ? '<div class="task-detail">' + esc(task.detail) + '</div>' : '') + taskProgressMarkup(task) + renderAiBudget(task);
 }
 function rangeText(seconds, jitter) {
   const base = Number(seconds) || 0, rate = Number(jitter) || 0;
@@ -360,7 +362,7 @@ function renderWorkflowStatus() {
   const ready = (state.accounts || []).filter(account => loginFeedbackFor(account).phase === 'authenticated').length;
   $('flow-accounts').textContent = ready ? ready + ' 个账号已登录' : '先检查专用浏览器登录';
   const next = $('overview-next');
-  if (state.task && state.task.running) { next.dataset.goto = state.task.kind === 'ai' ? 'leads' : ['follow', 'dm', 'outreach'].includes(state.task.kind) ? 'actions' : state.task.kind === 'login' ? 'accounts' : 'collect'; next.textContent = '查看当前任务'; $('overview-next-title').textContent = '任务正在进行'; $('overview-next-detail').textContent = state.task.status || '可查看实时进度，或随时停止。'; }
+  if (taskActive(state.task)) { next.dataset.goto = state.task.kind === 'ai' ? 'leads' : ['follow', 'dm', 'outreach'].includes(state.task.kind) ? 'actions' : state.task.kind === 'login' ? 'accounts' : state.task.kind === 'dm_distribution' ? 'leads' : 'collect'; next.textContent = '查看当前任务'; $('overview-next-title').textContent = '任务正在进行'; $('overview-next-detail').textContent = state.task.status || '可查看实时进度，或随时停止。'; }
   else if (!ready) { next.dataset.goto = 'accounts'; next.textContent = '进入账号管理'; $('overview-next-title').textContent = '先让采集账号就绪'; $('overview-next-detail').textContent = '打开专用浏览器，扫码后以实际登录反馈为准。'; }
   else { next.dataset.goto = 'collect'; next.textContent = '添加作品链接'; $('overview-next-title').textContent = '账号已就绪，开始本次采集'; $('overview-next-detail').textContent = '采集评论 → AI 判断 → 筛选名单 → 关注与私信。'; }
   if (state.task && state.task.collectionSummary) lastCollectionSummary = state.task.collectionSummary;
@@ -536,13 +538,13 @@ function renderAccounts() {
     const feedback = loginFeedbackFor(a);
     // 任何任务运行期间（含登录轮询）都不允许再操作账号浏览器；
     // 新增账号是本地写入，不受此限制。
-    const taskBusy = !!(state && state.task && state.task.running);
+    const taskBusy = taskActive(state && state.task);
     const locked = feedback.busy || startupScanBusy() || taskBusy;
     return `<tr data-account-row="${esc(a.id)}">
       <td>${a.id}</td>
       <td>${esc(a.name)}${a.note ? `<br><span class="subtext">${esc(a.note)}</span>` : ''}</td>
       <td class="account-login-cell" data-login-state="${esc(feedback.phase)}"><strong>${esc(loginPhaseLabels[feedback.phase] || a.loginState)}</strong>${feedback.message ? `<span class="subtext">${esc(feedback.message)}</span>` : ''}${a.loginCheckedAt ? `<span class="subtext">最近检查：${esc(a.loginCheckedAt)}</span>` : ''}${a.loginAt ? `<span class="subtext">最近确认登录：${esc(a.loginAt)}</span>` : ''}</td>
-      <td><select data-account-mode="${esc(a.id)}" aria-label="${esc(a.name)}的浏览器模式" ${locked || state.task?.running ? 'disabled' : ''}><option value="external" ${a.browserMode !== 'embedded' ? 'selected' : ''}>外部专用浏览器</option><option value="embedded" ${a.browserMode === 'embedded' ? 'selected' : ''} ${!embeddedBrowser ? 'disabled' : ''}>内嵌浏览器</option></select></td>
+      <td><select data-account-mode="${esc(a.id)}" aria-label="${esc(a.name)}的浏览器模式" ${locked || taskBusy ? 'disabled' : ''}><option value="external" ${a.browserMode !== 'embedded' ? 'selected' : ''}>外部专用浏览器</option><option value="embedded" ${a.browserMode === 'embedded' ? 'selected' : ''} ${!embeddedBrowser ? 'disabled' : ''}>内嵌浏览器</option></select></td>
       <td>${esc(a.proxy || '—')}</td>
       <td>${a.daily.follow} / ${a.daily.dm} / ${a.daily.videos}</td>
       <td class="account-action-cell"><div class="account-actions">
@@ -982,14 +984,14 @@ function setAiFeedback(phase, message) {
 function renderAiTask() {
   const task = state && state.task, box = $('ai-task-status');
   const excludedScope = !selectedLeadIds.size && leadFilter.f === 'ai_excluded';
-  $('btn-ai-start').disabled = aiSubmitBusy || !!(task && task.running) || excludedScope;
+  $('btn-ai-start').disabled = aiSubmitBusy || taskActive(task) || excludedScope;
   $('ai-force-rejudge').disabled = $('btn-ai-start').disabled;
   $('ai-pending').textContent = excludedScope ? '（作者或空评论不参与）' : selectedLeadIds.size ? `（已勾选 ${selectedLeadIds.size} 条）` : $('ai-force-rejudge').checked ? '（重新判断当前筛选范围）' : leadAiPendingCount ? `（待判断 ${leadAiPendingCount} 条）` : '';
   if (aiFeedback && aiFeedback.signature !== actionTaskSignature(task)) aiFeedback = null;
   if (aiFeedback) {
     box.className = 'task-box' + (aiFeedback.phase === 'error' ? ' err' : ['pending', 'submitted'].includes(aiFeedback.phase) ? ' running' : '');
     box.textContent = aiFeedback.message;
-  } else if (task && (task.kind === 'ai' || task.running)) {
+  } else if (task && (task.kind === 'ai' || taskActive(task))) {
     renderTask('ai-task-status', task);
   } else {
     box.className = 'task-box hidden'; box.textContent = '';
@@ -1046,8 +1048,10 @@ function renderOutreachControls() {
   // 多账号模式只走“开始分发”，单账号的预检查/执行按钮必须保持禁用。
   // 每次刷新都会调用这里，不能只在切换下拉框时设置一次。
   const isDist = $('act-mode').value === 'distribution';
-  for (const id of ['btn-follow-start', 'btn-dm-start', 'btn-outreach-start']) $(id).disabled = isDist || precheckRequestBusy || outreachSubmitBusy;
-  for (const id of ['a-fol-enabled', 'a-dm-enabled', 'a-dm-template']) $(id).disabled = isDist;
+  const busy = taskActive(state && state.task);
+  for (const id of ['btn-follow-start', 'btn-dm-start', 'btn-outreach-start']) $(id).disabled = isDist || busy || precheckRequestBusy || outreachSubmitBusy;
+  for (const id of ['a-fol-enabled', 'a-dm-enabled', 'a-dm-template']) $(id).disabled = isDist || busy;
+  for (const id of ['btn-dist-preview', 'btn-dist-start']) $(id).disabled = busy || precheckRequestBusy || outreachSubmitBusy;
   $('pc-cancel').disabled = outreachSubmitBusy;
 }
 async function openPrecheck(kind) {
@@ -1250,9 +1254,10 @@ function renderDistributionProgress() {
   const box = $('dist-progress');
   const task = state && state.task;
   if (task && task.kind === 'dm_distribution') {
-    box.className = 'task-box' + (task.running ? ' running' : '');
+    const active = taskActive(task);
+    box.className = 'task-box' + (active ? ' running' : '');
     const s = task.distributionSummary || {};
-    box.textContent = (task.running ? '进行中 · ' : '') + (task.status || '')
+    box.textContent = (active ? '进行中 · ' : '') + (task.status || '')
       + (s && s.perAccount && Object.keys(s.perAccount).length ? '\n' + Object.values(s.perAccount).map(p => p.name + ' 成功' + (p.success || 0)).join('｜') : '')
       + (s && s.unassigned != null ? '\n待分配：' + s.unassigned : '');
   } else {
@@ -1606,7 +1611,7 @@ function checkedNumber(id, min, max, label) {
   return value;
 }
 function renderConfigActions() {
-  const running = !!(state && state.task && state.task.running);
+  const running = taskActive(state && state.task);
   $('btn-collect-start').disabled = collectSubmitBusy || running;
   $('btn-collect-start').textContent = collectSubmitBusy ? '正在提交…' : collectConfigDirty ? '保存配置并开始采集' : $('c-col-autoai').checked ? '开始采集并判断' : '开始采集';
   $('collect-unsaved').textContent = collectConfigDirty ? '有未保存修改，开始时先保存' : '';

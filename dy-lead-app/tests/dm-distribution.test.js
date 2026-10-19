@@ -242,6 +242,23 @@ test('新一轮分发清除上一轮未过期的残留分配锁', async () => {
   assert.equal(result.done, 2);
 });
 
+test('预览不按残留分配锁排除：未关注未私信即重新进入候选', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 3105, count: 3 }]);
+  const rows = store.getLeads();
+  const settings = store.getSettings();
+  // 3 条都有未消费、未过期的残留锁（上一轮中断）
+  const locks = {};
+  for (const lead of rows) locks[workflow.contactKey(lead, settings)] = { accountId: '2', kind: 'outreach', plannedAt: store.nowStr(), expiresAt: Date.now() + 3600 * 1000, consumed: false };
+  store.setAllocations(locks);
+  const f = makeFixture();
+  const preview = f.dist.dmDistributionPreview({ poolAccounts: ['1'], filters: { f: 'all' } });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.totalCandidates, 3, '预览候选不因残留锁减少');
+  assert.equal(preview.perAccount.reduce((sum, item) => sum + item.count, 0) + preview.unassigned, 3, '全部可分配');
+  assert.ok(!(preview.exclusions || []).some(item => /已分配给其他账号执行/.test(item.reason)), '预览不应再出现“已分配给其他账号执行”');
+});
+
 test('分发批次前释放 running，runTask 的任务锁守卫不再拒绝每个批次', async () => {
   freshSettings();
   seedLeads([1], [{ id: 3100, count: 6 }]);

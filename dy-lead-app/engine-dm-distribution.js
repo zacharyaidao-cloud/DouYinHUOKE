@@ -82,7 +82,6 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     } else if (options.filters && Object.keys(options.filters).length) {
       rows = require('./lead-query').filterLeads(rows, videos, options.filters, { settings, now });
     }
-    const allocations = store.getAllocations();
     // 分发执行「关注 + 私信」：关注或私信任一符合条件即可入池，逐条记录需要哪些动作。
     const excluded = new Map();
     const bump = (reason, count = 1) => excluded.set(reason, (excluded.get(reason) || 0) + count);
@@ -93,9 +92,9 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
       const followEligibility = workflow.eligibility(lead, 'follow', history, settings, now, videos);
       const dmEligibility = workflow.eligibility(lead, 'dm', history, settings, now, videos);
       if (!followEligibility.ok && !dmEligibility.ok) { bump(dmEligibility.reason || followEligibility.reason || '不符合联系条件'); continue; }
-      const entry = allocations[workflow.contactKey(lead, settings)];
-      // 过期分配锁不再生效；否则一次中断会让这些用户被永久排除。
-      if (entry && entry.consumed !== true && !workflow.allocationExpired(entry, now) && String(entry.accountId)) { bump('已分配给其他账号执行'); continue; }
+      // 分配锁只在“本轮运行内”有意义，且由 runTask 的 blockedByAllocation 在真正执行时兜底防双触。
+      // 候选筛选阶段绝不按残留锁排除：只要还没关注/私信成功（锁未消费），就该重新进入候选，
+      // 否则上一轮中断/停止遗留的锁会把用户永久排除（表现为“已分配给其他账号执行 N 条”）。
       selected.push(lead);
       needs.set(String(lead.id), { follow: followEligibility.ok, dm: dmEligibility.ok });
     }

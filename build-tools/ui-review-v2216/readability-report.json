@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-10-19T08:46:25.363Z",
+  "verifiedAt": "2026-10-19T08:58:56.827Z",
   "source": "isolated local mock with source defaults",
   "reports": [
     {
@@ -102,7 +102,7 @@
       "width": 1360,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 85,
+      "textCount": 84,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],

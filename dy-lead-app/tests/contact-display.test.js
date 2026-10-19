@@ -47,9 +47,11 @@ test('紧凑联系栏区分网页历史与软件发送回执，不把未知显�
   assert.match(contactCell(lead, 'contact'), /最近私信失败/);
 });
 
-test('关注栏区分历史与网页观察，其他执行账号的旧复制锁不显示核验按钮', () => {
+test('关注栏：成功关注跨账号显示，待核验按执行账号隔离', () => {
   const lead = { id: 1, accountId: '2', followedAt: '历史时间', followAttemptAccountId: '1', followState: 'pending_verification' };
-  assert.doesNotMatch(contactCell(lead, 'contact'), /关注待核验|曾确认关注/);
+  // 历史关注成功(followedAt)跨账号显示“曾确认关注”；其他账号的待核验不显示、也不显示核验按钮
+  assert.match(contactCell(lead, 'contact'), /曾确认关注/);
+  assert.doesNotMatch(contactCell(lead, 'contact'), /关注待核验/);
   assert.doesNotMatch(buttons(lead), /follow-success|follow-failed/);
   lead.followAttemptAccountId = '2';
   assert.match(contactCell(lead, 'contact'), /关注待核验/);

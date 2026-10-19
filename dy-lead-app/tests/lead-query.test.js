@@ -110,7 +110,7 @@ test('触达分类优先阻止状态，待核验不能被历史成功计数当�
   assert.throws(() => normalizeFilters({ contact: 'unknown' }), /触达状态/);
 });
 
-test('联系筛选纳入网页已发历史及当前账号关注观察，其他账号复制关注状态不参与', () => {
+test('联系筛选纳入网页已发历史；关注成功/已关注跨账号共享，待核验/失败按执行账号隔离', () => {
   const rows = [
     { id: 1, accountId: '1', dmHistorySentObserved: { state: 'already_sent', accountId: '1', lastSentAt: null } },
     { id: 2, accountId: '1', followObserved: { state: 'following', accountId: '1' } },
@@ -120,11 +120,11 @@ test('联系筛选纳入网页已发历史及当前账号关注观察，其他�
     { id: 6, accountId: '1', dmHistoryObserved: { state: 'unknown' } },
     { id: 7, accountId: '1', followAttemptAccountId: '2', followState: 'confirmed_failure', dmHistoryObserved: { state: 'already_sent' } }
   ];
-  assert.deepEqual(rows.map(contactCategory), ['sent', 'followed', 'new', 'new', 'pending', 'new', 'sent']);
+  assert.deepEqual(rows.map(contactCategory), ['sent', 'followed', 'followed', 'followed', 'pending', 'new', 'sent']);
   assert.deepEqual(filterLeads(rows, {}, { contact: 'sent' }).map(row => row.id), [1, 7]);
-  assert.deepEqual(filterLeads(rows, {}, { contact: 'followed' }).map(row => row.id), [2]);
+  assert.deepEqual(filterLeads(rows, {}, { contact: 'followed' }).map(row => row.id), [2, 3, 4]);
   assert.deepEqual(filterLeads(rows, {}, { f: 'undm' }).map(row => row.id), [2, 3, 4, 6]);
-  assert.deepEqual(filterLeads(rows, {}, { f: 'unfollowed' }).map(row => row.id), [1, 3, 4, 5, 6, 7]);
+  assert.deepEqual(filterLeads(rows, {}, { f: 'unfollowed' }).map(row => row.id), [1, 5, 6, 7]);
   assert.deepEqual(filterLeads(rows, {}, { f: 'pending' }).map(row => row.id), [5]);
   assert.equal(rows[0].dmCount, undefined, '显示为已有私信历史不伪造软件成功次数');
 });

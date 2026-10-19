@@ -486,13 +486,11 @@ function createPlan(accountId, kind = 'outreach', options = {}) {
   // 历史按 contactKey 建一次索引：否则每条线索都要全库扫描，1.7 万条约 30 秒。
   const now = Date.now(), history = workflow.historyIndex(all, settings);
   const decisionOptions = { accountId: String(accountId) };
-  const crossCollected = selected.filter(lead => String(lead.accountId) !== String(accountId)).length;
   const decisions = new Map(), matched = [];
   for (const lead of selected) {
-    // 关注状态按执行账号隔离，而线索行按采集账号展示：跨采集账号只做私信，
-    // 避免出现“账号1关注了，但行上显示未关注”的错觉。
-    const ownedByAccount = String(lead.accountId) === String(accountId);
-    const follow = actions.follow && ownedByAccount ? workflow.eligibility(lead, 'follow', history, settings, now, videos, decisionOptions) : { ok: false };
+    // 采集账号与执行账号解耦：任意执行账号都按统一规则做关注与私信。
+    // 是否已关注由 workflow.eligibility 依据「执行账号自己的关注历史」判定（跨账号各自独立）。
+    const follow = actions.follow ? workflow.eligibility(lead, 'follow', history, settings, now, videos, decisionOptions) : { ok: false };
     const dm = actions.dm ? workflow.eligibility(lead, 'dm', history, settings, now, videos, decisionOptions) : { ok: false };
     if (!follow.ok && !dm.ok) continue;
     decisions.set(String(lead.id), { follow: follow.ok, dm: dm.ok });
@@ -520,8 +518,6 @@ function createPlan(accountId, kind = 'outreach', options = {}) {
     frozenMessages.set(String(lead.id), message);
   }
   const warnings = [];
-  const queueCross = queue.filter(lead => String(lead.accountId) !== String(accountId)).length;
-  if (actions.follow && queueCross) warnings.push(`其中 ${queueCross} 条由其他采集账号采集，本次只执行私信；关注请使用对应采集账号`);
   if (limited.follow) warnings.push(`今日关注尝试额度限制了 ${limited.follow} 位用户的关注操作`);
   if (limited.dm) warnings.push(`今日私信尝试额度限制了 ${limited.dm} 位用户的私信操作`);
   if (limited.profile) warnings.push(`今日主页访问额度不足，${limited.profile} 位用户未进入执行名单`);

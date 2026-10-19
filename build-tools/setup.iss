@@ -2,7 +2,7 @@
 ; 默认安装到 D:\华贸自媒体获客；用户仍可在安装向导选择其他目录。
 
 #define MyAppName "抖音获客软件"
-#define MyAppVersion "2.4.9"
+#define MyAppVersion "2.4.10"
 #define MyAppDir "..\dy-lead-app-release"
 #define MyAppExeName "抖音获客软件.exe"
 

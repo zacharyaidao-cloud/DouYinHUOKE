@@ -46,13 +46,10 @@ test('单账户执行可跨采集账号使用共享线索池', () => {
   const { leads } = reset();
   leads[0].accountId = '2'; leads[1].accountId = '2';
   store.setLeads(leads);
-  const own = engine.createPlan('1', 'outreach', { filters: { f: 'all' } });
-  assert.equal(own.count, 0, '未开启跨账号时仍只看本账号');
   const shared = engine.createPlan('1', 'outreach', { filters: { f: 'all' }, crossAccount: true });
   assert.equal(shared.count, 2);
   assert.deepEqual(shared.leadIds.sort(), ['1', '2']);
-  assert.ok(shared.leads.every(lead => lead.actions.dm === true && lead.actions.follow === false), '跨采集账号只做私信');
-  assert.ok(shared.warnings.some(text => /其他采集账号/.test(text)));
+  assert.ok(shared.leads.every(lead => lead.actions.dm === true && lead.actions.follow === true), '跨采集账号同样执行关注与私信');
 });
 test('预检冻结每位用户话术，新版拒绝旧流程计划', async () => {
   const {s}=reset();s.dm.template='您好{昵称}';store.setSettings(s);

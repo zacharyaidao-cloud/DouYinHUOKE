@@ -46,8 +46,10 @@ function hasSentHistory(lead) {
     || [lead.dmHistoryObserved, lead.dmHistorySentObserved].some(observed => observed && observed.state === 'already_sent');
 }
 function hasFollowHistory(lead) {
-  return ownsFollowHistory(lead) && (lead.followedAt || lead.followState === 'confirmed_success' || lead.followOutcome === 'confirmed_success' || ['followed', 'followed_dm'].includes(lead.status))
-    || lead.followObserved && lead.followObserved.state === 'following' && !!lead.accountId && String(lead.followObserved.accountId) === String(lead.accountId);
+  // 关注“成功/已关注”跨账号全局共享（采集账号与执行账号解耦后，任一账号关注成功都算已关注）；
+  // 待核验/失败仍按执行账号隔离，避免其他账号的进行中/失败状态污染本行。
+  return lead.followedAt || lead.followState === 'confirmed_success' || lead.followOutcome === 'confirmed_success' || ['followed', 'followed_dm'].includes(lead.status)
+    || lead.followObserved && lead.followObserved.state === 'following';
 }
 function contactCategory(lead) {
   if (lead.doNotContact || lead.status === 'do_not_contact' || lead.noDm && lead.noDmConfirmed) return 'blocked';

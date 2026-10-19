@@ -693,9 +693,11 @@ function compactLeadCell(lead, key) {
       if (outcome === 'confirmed_failure' || legacyFailed) {
         return `<span class="lead-line lead-status-failure" title="${esc(lead[kind + 'FailedReason'] || '')}">最近${name}失败</span>`;
       }
-      const success = outcome === 'confirmed_success' || (kind === 'dm' ? Number(lead.dmCount) > 0 || ['dm_sent', 'followed_dm'].includes(lead.status) : ownAction && (!!lead.followedAt || ['followed', 'followed_dm'].includes(lead.status)));
+      const success = kind === 'dm'
+        ? outcome === 'confirmed_success' || Number(lead.dmCount) > 0 || ['dm_sent', 'followed_dm'].includes(lead.status)
+        : lead.followState === 'confirmed_success' || lead.followOutcome === 'confirmed_success' || !!lead.followedAt || ['followed', 'followed_dm'].includes(lead.status);
       const observed = kind === 'dm' ? lead.dmHistorySentObserved || lead.dmHistoryObserved : lead.followObserved;
-      const historical = observed && (kind === 'dm' ? observed.state === 'already_sent' : String(observed.accountId) === String(lead.accountId) && observed.state === 'following');
+      const historical = observed && (kind === 'dm' ? observed.state === 'already_sent' : observed.state === 'following');
       const label = kind === 'dm' ? success ? '私信已确认' : historical ? '历史已私信' : '暂无私信记录' : historical ? '主页已关注' : success ? '曾确认关注' : '暂无关注记录';
       return `<span class="lead-line ${success || historical ? 'lead-status-success' : 'lead-muted'}">${label}</span>`;
     };

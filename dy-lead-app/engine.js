@@ -1146,6 +1146,8 @@ const actions = createActions({
   store, taskState, setTask, SLEEP, makeScheduler, getAlive, launchAccount,
   saveLeadAction, saveContactObservation, resolvePlan, checkpoint, applyTemplate,
   checkPageHealth: checkAccountPageHealth,
+  // 关注走核心实现（点击前现找按钮、只认 commit/follow/user 响应），见 core/follow.js 与正确流程规格 4.2
+  followAction: require('./core/follow').follow,
   getHooks: () => hooks, getSignal: () => taskAbort && taskAbort.signal
 });
 const { followTask, dmTask, outreachTask, openLeadProfile } = actions;

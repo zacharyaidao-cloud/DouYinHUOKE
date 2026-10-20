@@ -23,25 +23,61 @@ if (!profileDir || !listFile || !outDir || (dm && !message)) {
   process.exit(2);
 }
 
+// 一个用户是否已有“定论”（不再重试）：送达 / 跳过 / 待核验 / 对方原因发不出（私密、窗口不出现、接收人级拒绝）。
+// 账号级拒绝（频繁、上限）不算定论：对方根本没收到，账号恢复后要重发。
+function settledOf(row) {
+  const dm = row.dm || {};
+  if (['confirmed_success', 'refused', 'skipped', 'pending_verification'].includes(dm.state)) return true;
+  if (dm.state === 'not_sent' && dm.stage !== 'error') return true;
+  if (dm.state === 'confirmed_failure' && dm.failureScope !== 'account') return true;
+  return false;
+}
+const probeMinutes = Math.max(0, Number(arg('probe-interval-min')) || 0); // >0：触发频繁后每隔 N 分钟试发 1 条，恢复即续发
+const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
+
 (async () => {
   fs.mkdirSync(outDir, { recursive: true });
   const resultsFile = path.join(outDir, 'results.json');
-  const previous = fs.existsSync(resultsFile) ? JSON.parse(fs.readFileSync(resultsFile, 'utf8')) : [];
-  const settled = new Set(previous.filter(row => ['confirmed_success', 'refused', 'skipped', 'pending_verification'].includes(row.dm?.state)).map(row => row.secUid));
-  const targets = JSON.parse(fs.readFileSync(listFile, 'utf8')).filter(row => row.priority === priority && row.secUid && !settled.has(row.secUid));
+  const all = fs.existsSync(resultsFile) ? JSON.parse(fs.readFileSync(resultsFile, 'utf8')) : [];
+  const latest = new Map(); for (const row of all) latest.set(row.secUid, row);
+  const settled = new Set([...latest.values()].filter(settledOf).map(row => row.secUid));
+  let targets = JSON.parse(fs.readFileSync(listFile, 'utf8')).filter(row => row.priority === priority && row.secUid && !settled.has(row.secUid));
   const trace = createTrace(path.join(outDir, 'trace.jsonl'));
-  trace.step('outreach.plan', { priority, users: targets.length, follow, dm, alreadySettled: settled.size, message });
+  trace.step('outreach.plan', { priority, users: targets.length, follow, dm, alreadySettled: settled.size, probeMinutes, message });
   const session = new Session({ profileDir, trace });
+  const save = result => { all.push({ ...result, at: new Date().toISOString() }); fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8'); };
   try {
     await session.open();
     if (!await session.ensureLogin()) throw new Error('未登录');
-    const all = [...previous];
-    await outreachList(session, targets, { follow, dm, message, onResult: result => {
-      all.push({ ...result, at: new Date().toISOString() });
-      fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8');
-    } });
+    let limitedAt = null, probes = 0;
+    while (targets.length) {
+      const results = await outreachList(session, targets, { follow, dm, message, onResult: save });
+      const done = new Set(results.filter(settledOf).map(row => row.secUid));
+      targets = targets.filter(row => !done.has(row.secUid));
+      const stop = results[results.length - 1]?.stop;
+      if (!stop) break;                                       // 名单走完
+      const frequent = /FREQUENT|restricted/i.test(stop.code || '');
+      if (!frequent || !probeMinutes) { trace.step('outreach.halt', { reason: stop.reason, code: stop.code, remaining: targets.length }); break; }
+      limitedAt = limitedAt || Date.now();
+      // 频繁冷却：每隔 N 分钟只试发 1 人，恢复了就回到上面的循环继续发
+      let recovered = false;
+      while (!recovered && probes < probeMax && targets.length) {
+        trace.step('outreach.cooldown_wait', { minutes: probeMinutes, sinceLimitedMin: Math.round((Date.now() - limitedAt) / 60000), probes, remaining: targets.length });
+        await session.page.waitForTimeout(probeMinutes * 60000);
+        probes++;
+        const [probe] = await outreachList(session, targets.slice(0, 1), { follow, dm, message, onResult: save });
+        const minutes = Math.round((Date.now() - limitedAt) / 60000);
+        if (probe?.dm?.state === 'confirmed_success') {
+          recovered = true;
+          trace.step('outreach.recovered', { afterMinutes: minutes, probes });
+          limitedAt = null;
+        } else trace.step('outreach.still_limited', { afterMinutes: minutes, probes, dm: probe?.dm?.state, code: probe?.stop?.code || probe?.dm?.failureCode || '' });
+        if (probe && settledOf(probe)) targets = targets.slice(1);
+      }
+      if (!recovered) { trace.step('outreach.halt', { reason: '冷却试探次数用尽仍未恢复', probes, remaining: targets.length }); break; }
+    }
     const tally = key => all.reduce((acc, row) => ({ ...acc, [row[key]?.state || 'none']: (acc[row[key]?.state || 'none'] || 0) + 1 }), {});
-    trace.step('outreach.done', { follow: tally('follow'), dm: tally('dm') });
+    trace.step('outreach.done', { follow: tally('follow'), dm: tally('dm'), remaining: targets.length });
   } catch (error) {
     trace.step('outreach.error', { message: error.message });
   } finally { await session.close(); }

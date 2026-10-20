@@ -10,7 +10,7 @@ const { ActionScheduler } = require(path.join(testApp, 'scheduler'));
 const W = require(path.join(testApp, 'workflow'));
 const AI = require(path.join(testApp, 'ai'));
 const { EventEmitter } = require('node:events');
-function fixture({ dmAccountState = null, count = 1, verifier, revokeAt, authorizeHook, onFocus, onSend, missingDm = false, editorMissing = false, diagnostic = {}, sendThrows = false, sendPreflightError = false, sendMissing = false, sendOutcome = true, health = 'ok', mutateAfterVisit, initialLead, actionIntervalSec = 0, human = {}, waitHook, followReceipt = 'success', followOutcome = 'clicked', followThrows = false, followPreflightError = false, followClickHook, navigateProfilePage, signal, beforeAdapterUiAction, selectConversation = false, profileRelation, dmHistory, lateDmHistory, repeat, domHistory, dmFeedback, crossAccount = false, leadAccountId = '1', planActions = { follow: true, dm: true } } = {}) {
+function fixture({ dmAccountState = null, count = 1, verifier, revokeAt, authorizeHook, onFocus, onSend, missingDm = false, editorMissing = false, diagnostic = {}, sendThrows = false, sendPreflightError = false, sendMissing = false, sendOutcome = true, health = 'ok', mutateAfterVisit, initialLead, actionIntervalSec = 0, human = {}, waitHook, followReceipt = 'success', followOutcome = 'clicked', followThrows = false, followPreflightError = false, followClickHook, navigateProfilePage, signal, beforeAdapterUiAction, selectConversation = false, profileRelation, dmHistory, lateDmHistory, repeat, domHistory, dmFeedback, crossAccount = false, leadAccountId = '1', planActions = { follow: true, dm: true }, followAction } = {}) {
   const settings = { ai: { prompt: '需求规则' }, action: { pacingVersion: 1, userIntervalSec: actionIntervalSec, userIntervalJitter: 0 }, human: { workPeriods: [], breakEvery: 0, maxConsecutiveErrors: 3, ...human }, follow: { enabled: true, dailyLimit: 20, intervalMinSec: 100, intervalMaxSec: 200 }, dm: { enabled: true, dailyLimit: 20, template: '你好', intervalMinSec: 200, intervalMaxSec: 300, repeat: { enabled: false } }, outreach: { businessId: 'default' } };
   if (repeat) settings.dm.repeat = repeat;
   let leads = Array.from({ length: count }, (_, i) => {
@@ -138,7 +138,8 @@ function fixture({ dmAccountState = null, count = 1, verifier, revokeAt, authori
     saveLeadAction: (l, kind) => { leads = leads.map(row => row.uid === l.uid ? JSON.parse(JSON.stringify({ ...row, ...l })) : row); saved.push({ kind, lead: structuredClone(l) }); },
     resolvePlan: () => plan, checkpoint: p => { checkpoint = { ...checkpoint, ...p }; },
     getHooks: () => ({ dmVerifier: verifier ? args => verifier(args, { leads, usage }) : async () => ({ state: 'pending_verification', reason: 'unknown receipt' }) }), getSignal: () => signal,
-    applyTemplate: (t, l) => t, receiptTimeoutMs: 5
+    applyTemplate: (t, l) => t, receiptTimeoutMs: 5,
+    ...(followAction ? { followAction } : {})
   };
   return { actions: createActions(deps), leads: () => leads, visited, clicked, authorized, usage, state, saved, events, trace, historyTargets, logs, launches, focuses, statuses, stages, messages, navigationOptions, uiActions, checkpoint: () => checkpoint, plan, page };
 }
@@ -1028,3 +1029,27 @@ test('入口点击被遮挡：失败原因带说明，遮挡元素写进诊断�
   assert.equal(diagnostic.entryBlocker, blocker.slice(0, 120));
   assert.equal(f.usage.dmAttempts || 0, 0);
 });
+
+
+// 新关注实现（engine 注入 core/follow.js）：只认关注接口响应，结果按原字段落库
+for (const [label, outcome, expected] of [
+  ['接口确认成功', { state: 'confirmed_success', evidence: 'commit/follow/user status_code=0 follow_status=1' }, { followState: 'confirmed_success', followCount: 1, attempts: 1 }],
+  ['私密账号已发出请求', { state: 'requested', reason: '对方为私密账号，已发出关注请求', evidence: 'follow_status=4' }, { followState: 'confirmed_success', followCount: 1, attempts: 1 }],
+  ['主页已关注不点击', { state: 'already', reason: '主页按钮显示已关注' }, { followState: undefined, followCount: 0, attempts: 0 }],
+  ['找不到按钮未点击', { state: 'not_clicked', reason: '主页没有可点击的关注按钮' }, { followState: 'confirmed_failure', followCount: 0, attempts: 0 }],
+  ['点击后无回执', { state: 'pending_verification', reason: '点击后未收到关注接口回执' }, { followState: 'pending_verification', followCount: 0, attempts: 1 }]
+]) {
+  test('新关注实现：' + label + '，私信照常继续', async () => {
+    const calls = [];
+    const f = fixture({ followAction: async (page, target) => { calls.push(target); return outcome; },
+      verifier: async () => ({ state: 'confirmed_success', evidence: 'matching current send receipt' }) });
+    const result = await f.actions.outreachTask('1', { planId: 'plan' });
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 1); assert.equal(calls[0].secUid, f.leads()[0].uid);
+    assert.equal(result.followCount, expected.followCount);
+    assert.equal(f.leads()[0].followState, expected.followState);
+    assert.equal(f.usage.followAttempts || 0, expected.attempts);
+    assert.equal(result.dmCount, 1);
+    assert.equal(f.clicked.includes('follow'), false); // 旧适配器的关注点击不再被调用
+  });
+}

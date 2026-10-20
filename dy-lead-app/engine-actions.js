@@ -206,7 +206,56 @@ function createActions(deps) {
       return observed;
     }); } finally { if (relation) relation.dispose(); }
   }
+  /**
+   * 关注（新实现，engine 显式注入 deps.followAction = core/follow.js 的 follow）。
+   * 实测：旧适配器按长串 nth-child 路径重定位常因主页重绘失败；点中时其回执匹配也对不上，
+   * 平台返回 status_code=0/follow_status=1 仍被记“待核验”。新实现点击前现找按钮、只认关注接口响应。
+   */
+  async function followOneCore(accountId, lead, page, scheduler, plan, relation) {
+    return scheduler.run({ accountId, kind: 'follow', uid: lead.uid }, async () => {
+      const settings = currentSettings(plan);
+      let eligible = actionEligibility(lead, 'follow', accountId, settings);
+      if (!eligible.ok) return skipAction(accountId, lead, 'follow', eligible.reason);
+      await checkPageHealth(page, accountId, lead.uid);
+      if (relation?.state === 'following') return skipAction(accountId, lead, 'follow', '本次主页响应确认当前账号已关注，继续处理私信');
+      await scheduler.before({ accountId, kind: 'follow', uid: lead.uid });
+      eligible = actionEligibility(lead, 'follow', accountId, settings);
+      if (!eligible.ok) return skipAction(accountId, lead, 'follow', eligible.reason);
+      lead = latest(lead.id);
+      const previousFollow = Object.fromEntries(FOLLOW_FIELDS.map(field => [field, lead[field]]));
+      lead.followAttemptId = crypto.randomUUID();
+      const attemptId = lead.followAttemptId;
+      lead.followAttemptAt = store.nowStr(); lead.followAttemptAccountId = String(accountId);
+      lead.followState = 'pending_verification'; lead.followOutcome = 'pending_verification';
+      lead.followFailedReason = '关注操作准备执行，等待状态核验';
+      saveLeadAction(lead, 'follow', settings);
+      progress(accountId, lead, '正在点击关注并等待本次回执', 'following');
+      const outcome = await deps.followAction(page, { uid: lead.UID, secUid: lead.uid },
+        { step: (name, data) => store.log(accountId, `关注：${name} ${JSON.stringify(data || {})}`) });
+      scheduler.checkStopped();
+      lead = latest(lead.id);
+      if (outcome.state === 'already') {
+        Object.assign(lead, previousFollow); saveLeadAction(lead, 'follow', settings);
+        saveObservation(accountId, lead, 'follow', { state: 'following', source: 'profile_control', evidence: '目标主页控件明确显示已关注或互相关注' });
+        return skipAction(accountId, lead, 'follow', '当前主页已显示关注关系，本次未点击，继续处理私信');
+      }
+      if (outcome.state === 'not_clicked') {
+        saveFollowResult(lead, { state: 'confirmed_failure', reason: outcome.reason, evidence: '未执行关注点击' }, settings, attemptId);
+        progress(accountId, lead, `关注未执行：${outcome.reason}`);
+        return { state: 'confirmed_failure', anomaly: true, skipped: true };
+      }
+      bumpAttempt(accountId, 'follow');
+      const state = outcome.state === 'requested' ? 'confirmed_success' : outcome.state;
+      const result = saveFollowResult(lead, { state, reason: outcome.reason || '', evidence: outcome.evidence || '' }, settings, attemptId);
+      if (result.state === 'confirmed_success') saveObservation(accountId, lead, 'follow', { state: 'following', source: 'follow_receipt', evidence: result.evidence });
+      progress(accountId, lead, result.state === 'confirmed_success' ? (outcome.state === 'requested' ? '关注请求已发出（对方为私密账号）' : '关注已确认成功')
+        : result.state === 'pending_verification' ? '关注已点击，回执尚未确认，保留待核验并继续本用户私信' : `关注失败：${result.reason}`);
+      await checkPageHealth(page, accountId, lead.uid);
+      return { state: result.state, success: result.state === 'confirmed_success', anomaly: result.state === 'confirmed_failure' };
+    });
+  }
   async function followOne(accountId, lead, page, scheduler, plan, relation) {
+    if (typeof deps.followAction === 'function') return followOneCore(accountId, lead, page, scheduler, plan, relation);
     const prepared = await scheduler.prepare({ accountId, kind: 'ui', uid: lead.uid }, async () => {
       const settings = currentSettings(plan), eligible = actionEligibility(lead, 'follow', accountId, settings);
       if (!eligible.ok) return skipAction(accountId, lead, 'follow', eligible.reason);

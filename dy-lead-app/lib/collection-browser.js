@@ -1,10 +1,12 @@
 'use strict';
 const { normalizeVideoLink } = require('./video-links');
 const { TaskStopError } = require('../scheduler');
+const { COMMENTS, bindPageFunction } = require('./selectors');
 
 // Browser callbacks stay outside the Node obfuscation boundary. Only explicit
-// arguments and browser globals may be used in these functions.
-function openComments(options) {
+// arguments and browser globals may be used in these functions. Locating rules
+// arrive from selectors.js (COMMENTS) as the second, inlined argument.
+function openComments(options, selectors) {
   // This callback is serialized independently by Playwright. Keep its helpers
   // inside the function, and return only state flags, never page/account data.
   const visible = element => {
@@ -12,45 +14,48 @@ function openComments(options) {
     const style = getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.opacity !== '0';
   };
-  const listSelector = '[data-e2e="comment-list"],[data-e2e="comment-list-container"],[data-e2e="comment-panel"],[data-e2e="comment-area"],[data-e2e="comment-content"],[class*="commentList"],[class*="CommentList"],[class*="comment-list"],[role="tabpanel"][id*="comment"],[role="region"][aria-label="评论"]';
-  const markerSelector = '[data-e2e="comment-item"],[data-e2e="comment-level-1"],[class*="commentItem"],[class*="CommentItem"]';
-  const excluded = 'input,textarea,[contenteditable="true"],[data-e2e="video-desc"],[data-e2e="video-description"],[data-e2e="comment-item"],[data-e2e="comment-level-1"],[class*="commentItem"],[class*="CommentItem"],[data-e2e="comment-input"]';
+  const rx = list => new RegExp(list.map(source => '(?:' + source + ')').join('|'));
+  const listSelector = selectors.list.join(',');
+  const markerSelector = selectors.item.join(',');
+  const excluded = selectors.entryExcluded.join(',');
+  const tabLabel = rx(selectors.tabLabel);
   let region = Array.from(document.querySelectorAll(listSelector)).find(visible);
   if (!region) {
     for (const marker of document.querySelectorAll(markerSelector)) {
       if (!visible(marker)) continue;
-      const list = marker.closest('[data-e2e="scroll-list"],[role="tabpanel"],[role="region"]');
+      const list = marker.closest(selectors.itemScope.join(','));
       if (list && list !== document.body && list !== document.documentElement && visible(list)) { region = list; break; }
     }
   }
   if (!region) {
-    for (const tab of document.querySelectorAll('[role="tab"][aria-controls]')) {
-      if (!visible(tab) || !/^评论\s*(?:[（(]?\d+(?:\.\d+)?[万亿+]?[）)]?)?$/.test((tab.textContent || '').trim())) continue;
+    for (const tab of document.querySelectorAll(selectors.tab.join(','))) {
+      if (!visible(tab) || !tabLabel.test((tab.textContent || '').trim())) continue;
       const panel = document.getElementById(tab.getAttribute('aria-controls'));
       if (panel && visible(panel) && panel.getAttribute('role') === 'tabpanel') { region = panel; break; }
     }
   }
   if (region) return { state: 'ready', hasRegion: true, clicked: false };
 
-  const labelIsComment = label => /^评论\s*(?:[（(]?\d+(?:\.\d+)?[万亿+]?[）)]?)?$/.test((label || '').trim());
+  const labelIsComment = label => tabLabel.test((label || '').trim());
+  const related = rx(selectors.relatedTabText), rejected = rx(selectors.entryRejectLabel);
   const candidates = [];
-  for (const element of document.querySelectorAll('[role="tab"],button,a,[data-e2e],[aria-label],[title],span,div,svg')) {
+  for (const element of document.querySelectorAll(selectors.entryCandidates.join(','))) {
     if (!visible(element) || element.closest(excluded) || element.closest(listSelector)) continue;
     const text = (element.textContent || '').trim(), aria = element.getAttribute('aria-label') || '', title = element.getAttribute('title') || '';
     const marker = element.getAttribute('data-e2e') || '';
-    const icon = /^(?:comment-icon|comment-button|video-comment|feed-comment-icon|video-comment-icon)$/.test(marker);
+    const icon = selectors.entryIconMarker.includes(marker);
     const roleTab = element.getAttribute('role') === 'tab' && labelIsComment(text);
     const labelled = labelIsComment(aria) || labelIsComment(title);
     const exactText = labelIsComment(text);
     if (!roleTab && !labelled && !icon && !exactText) continue;
-    let relatedTab = !!element.closest('[role="tablist"],[class*="tab"],[class*="Tab"]');
+    let relatedTab = !!element.closest(selectors.tabContainer.join(','));
     if (exactText && !relatedTab) {
       let parent = element.parentElement;
       for (let hops = 0; parent && parent !== document.body && hops < 3; hops++, parent = parent.parentElement) {
-        if ((parent.textContent || '').length <= 600 && /相关推荐/.test(parent.textContent || '')) { relatedTab = true; break; }
+        if ((parent.textContent || '').length <= 600 && related.test(parent.textContent || '')) { relatedTab = true; break; }
       }
     }
-    const interactive = element.closest('button,a,[role="button"],[role="tab"]');
+    const interactive = element.closest(selectors.entryInteractive.join(','));
     if (!roleTab && !labelled && !icon && !(exactText && (interactive || relatedTab))) continue;
     let target = interactive || element;
     if (!interactive && typeof target.click !== 'function' && icon && element.parentElement) {
@@ -58,7 +63,7 @@ function openComments(options) {
       if (parent.querySelectorAll('svg').length === 1 && /^\s*(?:\d+(?:\.\d+)?[万亿+]?)?\s*$/.test(parent.textContent || '')) target = parent;
     }
     if (!visible(target) || target.closest(excluded) || typeof target.click !== 'function') continue;
-    if (/关注|点赞|喜欢|收藏|相关推荐|发送/.test((target.getAttribute('aria-label') || '') + (target.getAttribute('title') || '') + (target.textContent || ''))) continue;
+    if (rejected.test((target.getAttribute('aria-label') || '') + (target.getAttribute('title') || '') + (target.textContent || ''))) continue;
     candidates.push({ target, priority: roleTab ? 4 : relatedTab && exactText ? 3 : labelled ? 2 : 1 });
   }
   candidates.sort((a, b) => b.priority - a.priority);
@@ -68,7 +73,7 @@ function openComments(options) {
   return { state: 'opened', hasRegion: false, clicked: true };
 }
 
-async function scrollComments() {
+async function scrollComments(_, selectors) {
   // Response parsing can finish just before the page appends its next batch.
   // Allow one layout frame, with a bounded fallback for background windows.
   await new Promise(resolve => {
@@ -90,28 +95,28 @@ async function scrollComments() {
     const style = getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.opacity !== '0';
   };
-  const listSelector = '[data-e2e="comment-list"],[data-e2e="comment-list-container"],[data-e2e="comment-panel"],[data-e2e="comment-area"],[data-e2e="comment-content"],[class*="commentList"],[class*="CommentList"],[class*="comment-list"],[role="tabpanel"][id*="comment"],[role="region"][aria-label="评论"]';
-  const markerSelector = '[data-e2e="comment-item"],[data-e2e="comment-level-1"],[class*="commentItem"],[class*="CommentItem"]';
-  let region = Array.from(document.querySelectorAll(listSelector)).find(visible);
+  const tabLabel = new RegExp(selectors.tabLabel.map(source => '(?:' + source + ')').join('|'));
+  let region = Array.from(document.querySelectorAll(selectors.list.join(','))).find(visible);
   if (!region) {
-    for (const marker of document.querySelectorAll(markerSelector)) {
+    for (const marker of document.querySelectorAll(selectors.item.join(','))) {
       if (!visible(marker)) continue;
-      const list = marker.closest('[data-e2e="scroll-list"],[role="tabpanel"],[role="region"]');
+      const list = marker.closest(selectors.itemScope.join(','));
       if (list && list !== document.body && list !== document.documentElement && visible(list)) { region = list; break; }
     }
   }
   if (!region) {
-    for (const tab of document.querySelectorAll('[role="tab"][aria-controls]')) {
-      if (!visible(tab) || !/^评论\s*(?:[（(]?\d+(?:\.\d+)?[万亿+]?[）)]?)?$/.test((tab.textContent || '').trim())) continue;
+    for (const tab of document.querySelectorAll(selectors.tab.join(','))) {
+      if (!visible(tab) || !tabLabel.test((tab.textContent || '').trim())) continue;
       const panel = document.getElementById(tab.getAttribute('aria-controls'));
       if (panel && visible(panel) && panel.getAttribute('role') === 'tabpanel') { region = panel; break; }
     }
   }
   if (!region) return { state: 'not_ready', moved: false, hasRegion: false };
+  const recommend = selectors.recommend.join(',');
   let node = region;
   for (let hops = 0; node && node !== document.body && node !== document.documentElement && hops < 8; hops++, node = node.parentElement) {
     if (!visible(node)) break;
-    const unrelated = Array.from(node.querySelectorAll('[data-e2e*="recommend"],[class*="recommend-list"],[class*="RecommendList"]')).some(element => visible(element) && !region.contains(element));
+    const unrelated = Array.from(node.querySelectorAll(recommend)).some(element => visible(element) && !region.contains(element));
     if (unrelated) break;
     const style = getComputedStyle(node);
     if (!/^(?:auto|scroll|overlay)$/.test(style.overflowY) || node.clientHeight <= 0 || node.scrollHeight <= node.clientHeight + 5) continue;
@@ -288,4 +293,8 @@ async function navigateCollectionPage(page, url, { authorize, checkStopped, sign
   }
 }
 
-module.exports = { openComments, scrollComments, trustedNavigation, landingWork, navigateCollectionPage };
+module.exports = {
+  openComments: bindPageFunction(openComments, COMMENTS, 'openComments'),
+  scrollComments: bindPageFunction(scrollComments, COMMENTS, 'scrollComments'),
+  trustedNavigation, landingWork, navigateCollectionPage
+};

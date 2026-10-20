@@ -71,8 +71,7 @@ async function navigateSearch(page, keyword, workType, scheduler, { onBeforeTab 
   const typeInUrl = () => new URL(page.url()).searchParams.get('type') === workType;
   if (typeInUrl()) return { tabVerified: true };
   // 页签区随结果渲染出现，给它几秒
-  await waitFor(() => page.evaluate(label => Array.from(document.querySelectorAll('[role="tab"],div,span,a'))
-    .some(e => e.offsetParent !== null && (e.textContent || '').replace(/\s+/g, '') === label), tabLabel).catch(() => false), { timeoutMs: 5000, scheduler });
+  await waitFor(() => page.evaluate(browserSearch.hasSearchTab, tabLabel).catch(() => false), { timeoutMs: 5000, scheduler });
   onBeforeTab();
   const result = await page.evaluate(browserSearch.clickSearchTab, tabLabel).catch(() => null);
   if (result && result.already) return { tabVerified: true };

@@ -6,6 +6,7 @@
 const conversations = new WeakMap();
 const diagnostics = new WeakMap();
 const { REJECTION_RULES } = require('./dm-rejection');
+const { OUTREACH: SELECTORS } = require('./selectors');
 // A readiness deadline, not an action delay: ready controls continue immediately.
 const WAIT_MS = 8000;
 const CLICK_MS = 2000;
@@ -55,7 +56,20 @@ function assertTarget(page, lead) {
 }
 
 // This function is serialized into the page. Keep every dependency local.
-function inspectControls({ kind, uid, numericUid, message, profileIdentity, rejectionRules = [] }) {
+// Locating rules arrive as `selectors` (selectors.js OUTREACH), never by closure.
+function inspectControls({ kind, uid, numericUid, message, profileIdentity, rejectionRules = [], selectors }) {
+  const S = selectors, P = selectors.profile, I = selectors.im;
+  const rx = (list, flags) => new RegExp(list.map(source => '(?:' + source + ')').join('|'), flags);
+  const any = list => list.join(',');
+  // Descendant combinations of two candidate lists, e.g. dialog × chat layer.
+  const within = (outer, inner) => outer.flatMap(o => inner.map(i => o + ' ' + i)).join(',');
+  const is = (e, list) => list.some(selector => e.matches(selector));
+  const ordinaryIdentity = rx(S.ordinaryIdentity, 'i'), profileScopeIdentity = rx(P.scopeIdentity, 'i');
+  const composerIdentity = rx(I.composerIdentity, 'i'), conversationIdentity = rx(I.conversationIdentity, 'i');
+  const followLabel = rx(P.followLabel), followedLabel = rx(P.followedLabel), followStateLabel = rx(P.followStateLabel);
+  const dmEntryLabel = rx(P.dmEntryLabel), sendLabel = rx(I.sendLabel), editorExcludeLabel = rx(I.editorExcludeLabel);
+  const dialogSelector = any(I.dialog), stackLayerInDialog = within(I.dialog, I.stackLayer);
+  const chatLayerSelector = any(I.chatLayer), listLayerSelector = any(I.listLayer), dialogChatLayers = within(I.dialog, I.chatLayer);
   const visible = e => {
     if (!e || !e.isConnected || !e.getClientRects().length) return false;
     for (let node = e; node && node.nodeType === 1; node = node.parentElement) {
@@ -72,7 +86,7 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   const disabled = e => {
     // Only the observed active SVG variant authorizes a click. Unknown/grey
     // variants remain unavailable; enclosing disabled buttons also apply.
-    if (e.matches('svg.e2e-send-msg-btn') && (!e.classList.contains('messageMsgInputpublishBtn') || !e.classList.contains('messageMsgInputpublishRedBtn'))) return true;
+    if (is(e, I.sendIcon) && !is(e, I.sendIconActive)) return true;
     for (let current = e; current && !/^(?:BODY|HTML)$/.test(current.tagName); current = current.parentElement) {
       if (current.disabled || attr(current, 'aria-disabled') === 'true' || current.hasAttribute('disabled')) return true;
     }
@@ -80,22 +94,22 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   };
   // The current Douyin composer uses an SVG itself as the native send control.
   // Its observed e2e marker distinguishes it from the adjacent emoji SVG.
-  const isSend = e => e.matches('svg.e2e-send-msg-btn') || label(e).some(value => /^(?:发送|发送消息|发送私信)$/.test(value));
+  const isSend = e => is(e, I.sendIcon) || label(e).some(value => sendLabel.test(value));
   const clickable = e => visible(e) && !disabled(e);
-  const allControls = Array.from(document.querySelectorAll('button,a,[role="button"],svg.e2e-send-msg-btn')).filter(visible);
+  const allControls = Array.from(document.querySelectorAll(any(S.controls.concat(I.sendIcon)))).filter(visible);
   const controls = allControls.filter(clickable);
   const recipientInfo = root => {
     // The current StackLayout flow verifies the profile/chat display name.
     // UID attributes in these layers are not an additional recipient gate.
-    if (root?.closest('[data-e2e="im-dialog"] [data-stack-layer]')) return { mismatch: false, hasTargetEvidence: false };
+    if (root?.closest(stackLayerInDialog)) return { mismatch: false, hasTargetEvidence: false };
     let hasTargetEvidence = false;
     for (let e = root; e && !/^(?:BODY|HTML)$/.test(e.tagName); e = e.parentElement) {
-      for (const name of ['data-sec-uid', 'data-sec-user-id', 'data-user-sec-uid', 'data-recipient-sec-uid']) {
+      for (const name of S.recipientSecUidAttributes) {
         const value = attr(e, name);
         if (value && value !== uid) return { mismatch: true, hasTargetEvidence: false };
         if (value === uid) hasTargetEvidence = true;
       }
-      for (const name of ['data-recipient-uid', 'data-recipient-id']) {
+      for (const name of S.recipientUidAttributes) {
         const value = attr(e, name);
         if (value && value !== uid && (!numericUid || value !== numericUid)) return { mismatch: true, hasTargetEvidence: false };
         if (value && (value === uid || numericUid && value === numericUid)) hasTargetEvidence = true;
@@ -106,7 +120,7 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   const ordinary = (e, profile = true) => {
     for (let current = e; current && !/^(?:BODY|HTML)$/.test(current.tagName); current = current.parentElement) {
       if (/^(?:HEADER|NAV)$/.test(current.tagName) || profile && current.tagName === 'ASIDE' || ['banner', 'navigation'].includes(attr(current, 'role'))) return true;
-      if (/(?:recommend|related|suggest|comment|search|message[-_ ]?(?:list|history|bubble|item)|chat[-_ ]?(?:list|history|bubble|item))/i.test(identity(current))) return true;
+      if (ordinaryIdentity.test(identity(current))) return true;
       if (current !== e && attr(current, 'contenteditable') === 'true') return true;
     }
     return false;
@@ -139,23 +153,23 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   };
   const profileScope = control => {
     for (let e = control.parentElement; e && !/^(?:BODY|HTML|MAIN)$/.test(e.tagName); e = e.parentElement) {
-      if (/(?:user[-_ ]?(?:info|detail|header|action)|profile[-_ ]?(?:info|detail|header|action))/i.test(identity(e))) return e;
+      if (profileScopeIdentity.test(identity(e))) return e;
     }
     return null;
   };
-  const infoNodes = Array.from(document.querySelectorAll('[data-e2e="user-info"]')).filter(e => visible(e) && !recipientInfo(e).mismatch);
+  const infoNodes = Array.from(document.querySelectorAll(any(P.info))).filter(e => visible(e) && !recipientInfo(e).mismatch);
   const pairedSiblingProfile = (control, info) => {
     const root = info.parentElement;
     if (!root || /^(?:BODY|HTML|MAIN)$/.test(root.tagName) || !root.contains(control) || info.contains(control)) return false;
     for (let group = control.parentElement; group && group !== root; group = group.parentElement) {
-      const follows = Array.from(group.querySelectorAll('[data-e2e="user-info-follow-btn"]')).filter(e => visible(e) && !recipientInfo(e).mismatch);
+      const follows = Array.from(group.querySelectorAll(any(P.followMarker))).filter(e => visible(e) && !recipientInfo(e).mismatch);
       if (follows.length === 1) return true;
       // After a follow click the platform may re-render the button as
       // "已关注/互相关注" without the original marker. Accept exactly one
       // follow-state control in the same action group as the pairing anchor.
       if (!follows.length) {
-        const states = Array.from(group.querySelectorAll('button,[role="button"]')).filter(e => visible(e) && e !== control && !e.contains(control)
-          && label(e).some(value => /^(?:[+＋]\s*)?(?:关注|回关|已关注|关注中|互相关注|相互关注)$/.test(value)));
+        const states = Array.from(group.querySelectorAll(any(P.followStateControls))).filter(e => visible(e) && e !== control && !e.contains(control)
+          && label(e).some(value => followStateLabel.test(value)));
         if (states.length === 1) return true;
       }
     }
@@ -209,7 +223,7 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   const readProfileIdentity = info => {
     const root = info?.parentElement;
     if (!root || /^(?:BODY|HTML|MAIN)$/.test(root.tagName)) return emptyProfile('profile_scope_missing');
-    const names = Array.from(info.querySelectorAll('h1')).filter(visible);
+    const names = Array.from(info.querySelectorAll(any(P.name))).filter(visible);
     const result = { ...emptyProfile('captured'), nameCount: names.length };
     if (names.length !== 1) result.reason = names.length ? 'profile_name_ambiguous' : 'profile_name_missing';
     else if (!displayName(names[0])) result.reason = 'profile_name_empty';
@@ -243,11 +257,9 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   };
   if (kind === 'follow' || kind === 'open') {
     const safe = profileControls();
-    const match = e => label(e).some(value => kind === 'follow'
-      ? /^(?:[+＋]\s*)?(?:关注|回关)$/.test(value)
-      : /^(?:私信|发私信|发送私信|发消息|发送消息)$/.test(value));
+    const match = e => label(e).some(value => kind === 'follow' ? followLabel.test(value) : dmEntryLabel.test(value));
     const candidates = safe.filter(match);
-    const already = kind === 'follow' ? safe.filter(e => label(e).some(value => /^(?:已关注|关注中|互相关注)$/.test(value))) : [];
+    const already = kind === 'follow' ? safe.filter(e => label(e).some(value => followedLabel.test(value))) : [];
     if (candidates.length > 1 || already.length > 1 || candidates.length && already.length) return { state: 'ambiguous', count: candidates.length + already.length };
     if (candidates.length === 1) {
       const profile = kind === 'open' ? capturedProfileIdentity(candidates[0]) : null;
@@ -263,7 +275,7 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   // by another stack. Check the actual target's clipped hit point, not merely
   // the existence of layout rectangles. A list row is its own action anchor.
   const activeStackLayer = (layer, anchor) => {
-    const dialog = layer?.closest('[data-e2e="im-dialog"]');
+    const dialog = layer?.closest(dialogSelector);
     if (!layer || !dialog || !anchor || !layer.contains(anchor) || !visible(layer) || !visible(dialog) || !visible(anchor)) return false;
     const box = anchor.getBoundingClientRect(), bounds = dialog.getBoundingClientRect();
     const layerBounds = layer.getBoundingClientRect();
@@ -275,13 +287,14 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   };
   const activeChatLayer = layer => {
     if (!layer) return false;
-    const headers = Array.from(layer.querySelectorAll('.StackLayoutStackTitleBartitleBar')).filter(visible);
+    const headers = Array.from(layer.querySelectorAll(any(I.chatTitleBar))).filter(visible);
     return headers.length === 1 && activeStackLayer(layer, headers[0]);
   };
-  const messageLists = Array.from(document.querySelectorAll('[data-e2e="message-list"],[data-e2e="conversation-list"],[data-testid="conversation-list"],[role="list"][aria-label="会话列表"],[data-e2e="im-dialog"] [data-stack-layer="list"]')).filter(visible);
+  const messageLists = Array.from(document.querySelectorAll(any(I.conversationList))).filter(visible);
+  const explicitSelector = S.recipientSecUidAttributes.concat(S.recipientUidAttributes).map(name => '[' + name + ']').join(',');
+  const conversationItem = any(I.conversationItem);
   if (kind === 'conversation-row') {
     const rows = new Map();
-    const explicitSelector = '[data-recipient-sec-uid],[data-sec-uid],[data-sec-user-id],[data-user-sec-uid],[data-recipient-uid],[data-recipient-id]';
     const rowEvidence = row => {
       const explicit = [row, ...row.querySelectorAll(explicitSelector)].filter(visible).map(recipientInfo);
       const links = Array.from(row.querySelectorAll('a[href]')).filter(visible).map(node => userPath(attr(node, 'href'))).filter(Boolean);
@@ -290,22 +303,22 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
         hasTargetEvidence: explicit.some(value => value.hasTargetEvidence) || links.some(value => value === uid || numericUid && value === numericUid) };
     };
     for (const list of messageLists) {
-      const observedLayer = list.closest('[data-stack-layer="list"]');
-      const observedList = observedLayer && observedLayer.closest('[data-e2e="im-dialog"]');
-      if (observedList && Array.from(observedList.querySelectorAll('[data-stack-layer="chat"]')).some(activeChatLayer)) continue;
+      const observedLayer = list.closest(listLayerSelector);
+      const observedList = observedLayer && observedLayer.closest(dialogSelector);
+      if (observedList && Array.from(observedList.querySelectorAll(chatLayerSelector)).some(activeChatLayer)) continue;
       const candidateRows = new Set(Array.from(list.querySelectorAll(explicitSelector + ',a[href]')).map(node => observedList
-        ? node.closest('[data-e2e="conversation-item"]')
-        : node.closest('[role="listitem"],[data-e2e="conversation-item"],[data-e2e="conversation-row"]') || node.closest('button,a,[role="button"]')).filter(Boolean));
-      if (observedList) for (const row of list.querySelectorAll('[data-e2e="conversation-item"]')) candidateRows.add(row);
+        ? node.closest(conversationItem)
+        : node.closest(any(I.conversationRow)) || node.closest(any(S.controls))).filter(Boolean));
+      if (observedList) for (const row of list.querySelectorAll(conversationItem)) candidateRows.add(row);
       for (const row of candidateRows) {
         if (!list.contains(row) || !clickable(row)) continue;
         // A semantic list nested in another stack cannot borrow its rows.
-        if (row.closest('[data-e2e="im-dialog"]') && (!observedList || row.closest('[data-stack-layer]') !== observedLayer || !activeStackLayer(observedLayer, row))) continue;
+        if (row.closest(dialogSelector) && (!observedList || row.closest(any(I.stackLayer)) !== observedLayer || !activeStackLayer(observedLayer, row))) continue;
         const evidence = observedList ? { mismatch: false, hasTargetEvidence: false } : rowEvidence(row);
         if (evidence.mismatch) continue;
         if (evidence.hasTargetEvidence) { rows.set(row, 'explicit_uid'); continue; }
-        if (!observedList || !profileIdentity || !currentProfileMatches() || !row.matches('[data-e2e="conversation-item"]')) continue;
-        const names = Array.from(row.querySelectorAll('.conversationConversationItemtitle')).filter(visible);
+        if (!observedList || !profileIdentity || !currentProfileMatches() || !row.matches(conversationItem)) continue;
+        const names = Array.from(row.querySelectorAll(any(I.conversationItemTitle))).filter(visible);
         if (names.length === 1 && sameIdentity({ name: displayName(names[0]) }, profileIdentity)) rows.set(row, 'dom_profile_name');
       }
     }
@@ -318,21 +331,20 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
         conversationRowEvidence: unique.length === 1 ? rows.get(unique[0]) : 'unconfirmed' } };
   }
 
-  const visibleEditors = Array.from(document.querySelectorAll('textarea,[contenteditable="true"],[contenteditable="plaintext-only"]')).filter(visible);
+  const visibleEditors = Array.from(document.querySelectorAll(any(I.editor))).filter(visible);
   const editorNodes = visibleEditors
     .filter(e => visible(e) && !disabled(e) && !e.readOnly && !ordinary(e, false)
-      && !/评论|搜索/.test([attr(e, 'placeholder'), attr(e, 'aria-label')].join(' '))
-      && (!e.closest('[data-e2e="im-dialog"]') || activeChatLayer(e.closest('[data-stack-layer="chat"]'))));
+      && !editorExcludeLabel.test([attr(e, 'placeholder'), attr(e, 'aria-label')].join(' '))
+      && (!e.closest(dialogSelector) || activeChatLayer(e.closest(chatLayerSelector))));
   const editorScope = (editor, checkRecipient = true) => {
     let fallback = null;
     for (let e = editor.parentElement; e && !/^(?:BODY|HTML|MAIN)$/.test(e.tagName); e = e.parentElement) {
       if (checkRecipient && recipientInfo(e).mismatch) return null;
       // The editor-only imChatEditorContainer is not the composer: its send
       // arrow is a sibling under inputRow. Never expand this to the whole page.
-      if (e.classList.contains('messageEditorimChatEditorContainer')) continue;
-      if (e.classList.contains('messageMsgInputinputRow') || e.classList.contains('messageMsgInputinputColumn')) return e;
-      if (attr(e, 'role') === 'dialog' || e.tagName === 'DIALOG'
-        || /(?:im[-_ ]?(?:chat|container)|(?:message|chat)[-_ ]?(?:panel|window|container|composer)|conversation|private[-_ ]?message)/i.test(identity(e))) return e;
+      if (is(e, I.editorOnlyContainer)) continue;
+      if (is(e, I.composer)) return e;
+      if (attr(e, 'role') === 'dialog' || e.tagName === 'DIALOG' || composerIdentity.test(identity(e))) return e;
       // Most chat clients disable Send until the first input event. Its presence
       // identifies the composer even while the action is not yet available.
       if (!fallback && allControls.some(button => e.contains(button) && isSend(button))) fallback = e;
@@ -342,88 +354,87 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   if (kind === 'baseline') return { state: 'baseline', editors: editorNodes.map(editor => ({ editorPath: pathFor(editor), scopePath: pathFor(editorScope(editor, false)) })) };
   const scopedEditors = editorNodes.map(editor => ({ editor, scope: editorScope(editor) })).filter(item => item.scope);
   const observedChatLayer = scope => {
-    const layer = scope.closest('[data-stack-layer="chat"]'), dialog = layer?.closest('[data-e2e="im-dialog"]');
+    const layer = scope.closest(chatLayerSelector), dialog = layer?.closest(dialogSelector);
     return layer && dialog && activeChatLayer(layer) ? layer : null;
   };
   const observedChatUser = scope => {
     const layer = observedChatLayer(scope);
     if (!layer) return null;
-    const users = Array.from(layer.querySelectorAll('.StackLayoutStackTitleBartitleBar .StackLayoutStackChatHeaderinfoContainer .StackLayoutStackChatHeaderuser')).filter(visible);
+    const users = Array.from(layer.querySelectorAll(any(I.chatHeaderUser))).filter(visible);
     return users.length === 1 ? users[0] : null;
   };
   const observedChatIdentity = scope => {
     const result = { chatNameCount: 0, chatNameMatches: 0, matched: false };
     if (!profileIdentity || !currentProfileMatches()) return result;
-    const chats = Array.from(document.querySelectorAll('[data-e2e="im-dialog"] [data-stack-layer="chat"]')).filter(activeChatLayer);
+    const chats = Array.from(document.querySelectorAll(dialogChatLayers)).filter(activeChatLayer);
     if (chats.length !== 1 || chats[0] !== observedChatLayer(scope)) return result;
     const user = observedChatUser(scope);
     if (!user) return result;
-    const names = Array.from(user.querySelectorAll('.StackLayoutStackChatHeadertitle')).filter(visible);
+    const names = Array.from(user.querySelectorAll(any(I.chatHeaderTitle))).filter(visible);
     result.chatNameCount = names.length;
     result.chatNameMatches = names.length === 1 && displayName(names[0]) === profileIdentity.name ? 1 : 0;
     result.matched = !!result.chatNameMatches;
     return result;
   };
   const recipientHeaderInfo = scope => {
-    if (scope.closest('[data-e2e="im-dialog"] [data-stack-layer]')) return { mismatch: false, hasTargetEvidence: false };
+    if (scope.closest(stackLayerInDialog)) return { mismatch: false, hasTargetEvidence: false };
     // A narrow composer excludes the header; inspect its nearest conversation
     // too, while still restricting the eventual click to the composer itself.
     let headerScope = scope;
     for (let e = scope; e && !/^(?:BODY|HTML|MAIN)$/.test(e.tagName); e = e.parentElement) {
-      if (attr(e, 'role') === 'dialog' || e.tagName === 'DIALOG'
-        || /(?:im[-_ ]?(?:chat|container)|(?:message|chat)[-_ ]?(?:panel|window|container)|conversation|private[-_ ]?message)/i.test(identity(e))) {
+      if (attr(e, 'role') === 'dialog' || e.tagName === 'DIALOG' || conversationIdentity.test(identity(e))) {
         headerScope = e;
         break;
       }
     }
     const observedUser = observedChatUser(scope);
     if (observedUser) headerScope = observedUser;
-    const explicitNodes = observedUser ? [observedUser, ...observedUser.querySelectorAll('[data-recipient-sec-uid],[data-sec-uid],[data-sec-user-id],[data-user-sec-uid],[data-recipient-uid],[data-recipient-id]')].filter(visible) : [];
+    const explicitNodes = observedUser ? [observedUser, ...observedUser.querySelectorAll(explicitSelector)].filter(visible) : [];
     const explicit = explicitNodes.map(recipientInfo);
-    const links = Array.from(headerScope.querySelectorAll(observedUser ? 'a[href]' : '[data-e2e="chat-header"] a[href],[data-e2e="conversation-header"] a[href],[class*="chat-header"] a[href],[class*="chatHeader"] a[href],[role="heading"] a[href]'))
+    const links = Array.from(headerScope.querySelectorAll(observedUser ? 'a[href]' : any(I.legacyHeaderLink)))
       .filter(visible).map(e => userPath(attr(e, 'href'))).filter(value => value && value !== 'self');
     return { mismatch: explicit.some(value => value.mismatch) || links.some(value => value !== uid && (!numericUid || value !== numericUid)),
       hasTargetEvidence: explicit.some(value => value.hasTargetEvidence) || links.some(value => value === uid || numericUid && value === numericUid) };
   };
   if (kind === 'chat-observation') {
     const unknown = { state: 'unknown' };
-    const layers = Array.from(document.querySelectorAll('[data-e2e="im-dialog"] [data-stack-layer="chat"]')).filter(activeChatLayer);
+    const layers = Array.from(document.querySelectorAll(dialogChatLayers)).filter(activeChatLayer);
     if (layers.length !== 1) return { state: 'missing', history: unknown };
     const layer = layers[0], recipient = recipientHeaderInfo(layer);
     if (recipientInfo(layer).mismatch || recipient.mismatch
       || !(recipient.hasTargetEvidence || observedChatIdentity(layer).matched)) return { state: 'missing', history: unknown };
     // Read only the current, verified chat. Conversation-list previews and
     // composers can contain identical text but are not historical messages.
-    const lists = Array.from(layer.querySelectorAll('.messageMessageListlist')).filter(visible);
+    const lists = Array.from(layer.querySelectorAll(any(I.messageList))).filter(visible);
     let outboundCount = 0;
-    if (lists.length === 1) for (const bubble of lists[0].querySelectorAll('.messageMessageBoxmessageBox')) {
+    if (lists.length === 1) for (const bubble of lists[0].querySelectorAll(any(I.bubble))) {
       if (!visible(bubble)) continue;
-      const boxes = bubble.querySelectorAll('.messageMessageBoxcontentBox');
-      const columns = bubble.querySelectorAll('.MessageBoxContentcolumnBox');
-      const contents = bubble.querySelectorAll('[data-e2e="msg-item-content"]');
-      const texts = bubble.querySelectorAll('.MessageItemTextcontainer');
-      const sides = bubble.querySelectorAll('.MessageBoxContentSidewrapper');
-      const bottoms = bubble.querySelectorAll('.MessageBoxContentBottomwrapper');
+      const boxes = bubble.querySelectorAll(any(I.bubbleBox));
+      const columns = bubble.querySelectorAll(any(I.bubbleColumn));
+      const contents = bubble.querySelectorAll(any(I.bubbleContent));
+      const texts = bubble.querySelectorAll(any(I.bubbleText));
+      const sides = bubble.querySelectorAll(any(I.bubbleSide));
+      const bottoms = bubble.querySelectorAll(any(I.bubbleBottom));
       const emptySlot = element => element.childElementCount === 0 && !element.textContent.trim();
-      if (boxes.length !== 1 || !boxes[0].classList.contains('messageMessageBoxisFromMe')
-        || columns.length !== 1 || !columns[0].classList.contains('MessageBoxContentisFromMe')
-        || contents.length !== 1 || texts.length !== 1 || !texts[0].classList.contains('MessageItemTextisFromMe')
+      if (boxes.length !== 1 || !is(boxes[0], I.bubbleBoxFromMe)
+        || columns.length !== 1 || !is(columns[0], I.bubbleColumnFromMe)
+        || contents.length !== 1 || texts.length !== 1 || !is(texts[0], I.bubbleTextFromMe)
         || !boxes[0].contains(columns[0]) || !columns[0].contains(contents[0]) || !contents[0].contains(texts[0])
         || sides.length !== 1 || bottoms.length !== 1 || !emptySlot(sides[0]) || !emptySlot(bottoms[0])) continue;
       // Unknown status decorations are not treated as a completed old bubble.
       if (Array.from(bubble.querySelectorAll('*')).some(node => /(?:fail|error|sending|pending|retry|loading)/i.test(node.getAttribute('class') || '')
         || node.hasAttribute('data-send-state') || node.getAttribute('aria-busy') === 'true')) continue;
-      const pure = texts[0].querySelectorAll('.TextMessageTextpureText[data-apm-action="纯文本"]');
+      const pure = texts[0].querySelectorAll(any(I.bubblePureText));
       if (pure.length === 1 && pure[0].textContent.trim()) outboundCount++;
     }
     let restriction = null;
-    for (const node of layer.querySelectorAll('p,span,div')) {
-      if (node.childElementCount || !visible(node) || node.closest('[data-e2e="msg-item-content"],[data-e2e="msg-input"],[contenteditable],textarea')) continue;
+    for (const node of layer.querySelectorAll(any(I.noticeCandidates))) {
+      if (node.childElementCount || !visible(node) || node.closest(any(I.noticeExclude))) continue;
       // Platform failures are rendered as their own messageBox row. Keep
       // excluding ordinary message text, but admit the observed tips structure.
-      const platformTip = node.classList.contains('MessageBoxTipsMessagetext')
-        && node.closest('.MessageBoxTipsMessagecontent')?.closest('.MessageBoxTipsMessagelayout');
-      if (node.closest('.messageMessageBoxmessageBox') && !platformTip) continue;
+      const platformTip = is(node, I.noticeText)
+        && node.closest(any(I.noticeContent))?.closest(any(I.noticeLayout));
+      if (node.closest(any(I.bubble)) && !platformTip) continue;
       const text = node.textContent.replace(/\s/g, '').replace(/[。！!]+$/, '');
       const matched = rejectionRules.find(rule => rule.texts.includes(text));
       if (matched) {
@@ -460,19 +471,19 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   if (kind === 'editor') return result;
   const editorText = () => {
     if (editor.tagName === 'TEXTAREA') return editor.value;
-    if (attr(editor, 'data-slate-editor') !== 'true') return editor.innerText;
+    if (!is(editor, I.richEditor)) return editor.innerText;
     const lines = Array.from(editor.children);
     if (!lines.length || Array.from(editor.childNodes).some(n => n.nodeType !== 1 && n.textContent.trim())
-      || lines.some(line => !line.matches('div.ace-line[data-node="true"]'))) return editor.innerText;
+      || lines.some(line => !is(line, I.richEditorLine))) return editor.innerText;
     const values = [];
     for (const line of lines) {
       const leaves = Array.from(line.children);
       if (!leaves.length || Array.from(line.childNodes).some(n => n.nodeType !== 1)
-        || leaves.some(leaf => !leaf.matches('span[data-string="true"][data-leaf="true"]') || leaf.children.length)) return editor.innerText;
+        || leaves.some(leaf => !is(leaf, I.richEditorLeaf) || leaf.children.length)) return editor.innerText;
       values.push(leaves.map((leaf, index) => {
         // Only the observed terminal editor sentinel is structural. Preserve
         // real whitespace, blank lines, emoji joiners and ZWSP in normal leaves.
-        if (index === leaves.length - 1 && attr(leaf, 'data-enter') === 'true' && leaf.textContent === '\u200b') return '';
+        if (index === leaves.length - 1 && is(leaf, I.richEditorEndSentinel) && leaf.textContent === '\u200b') return '';
         return leaf.textContent;
       }).join(''));
     }
@@ -497,7 +508,7 @@ async function inspect(page, lead, kind, message, waitMs = WAIT_MS, options = {}
   do {
     check(options);
     assertTarget(page, lead);
-    const result = await page.evaluate(inspectControls, { kind, uid, numericUid, message, profileIdentity: conversations.get(page)?.profileIdentity || null });
+    const result = await page.evaluate(inspectControls, { kind, uid, numericUid, message, profileIdentity: conversations.get(page)?.profileIdentity || null, selectors: SELECTORS });
     check(options);
     if (result.state !== 'missing' || Date.now() >= until) return result;
     await page.waitForTimeout(Math.min(100, Math.max(1, until - Date.now())));
@@ -861,7 +872,7 @@ async function readChatObservation(page, lead, profileIdentity, options = {}) {
   check(options);
   const uid = assertTarget(page, lead);
   const numericUid = /^[1-9]\d{0,31}$/.test(String(lead?.UID || '')) ? String(lead.UID) : '';
-  const result = await page.evaluate(inspectControls, { kind: 'chat-observation', uid, numericUid, profileIdentity, rejectionRules: REJECTION_RULES });
+  const result = await page.evaluate(inspectControls, { kind: 'chat-observation', uid, numericUid, profileIdentity, rejectionRules: REJECTION_RULES, selectors: SELECTORS });
   check(options);
   assertTarget(page, lead);
   return result;

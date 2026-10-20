@@ -44,6 +44,16 @@ class Session {
     });
     this.page = this.context.pages()[0] || await this.context.newPage();
     this.page.on('response', response => this.onResponse(response).catch(() => {}));
+    // 关注类请求单独记录（只记路径、方法与字段名，不记取值），用于核对关注动作实际调用的接口
+    this.page.on('request', request => {
+      let url; try { url = new URL(request.url()); } catch (_) { return; }
+      if (!/(^|\.)douyin\.com$/.test(url.hostname) || !/follow/i.test(url.pathname) || /\/(?:following|follower)\/list/.test(url.pathname)) return;
+      const body = request.postData() || '';
+      const fields = body.includes('=') ? body.split('&').map(pair => pair.split('=')[0]) : body ? ['(非表单正文)'] : [];
+      const keys = [...url.searchParams.keys()], dup = keys.filter((key, index) => keys.indexOf(key) !== index);
+      const bodyParams = body.includes('=') ? new URLSearchParams(body) : null;
+      this.trace.step('net.follow_request', { contentType: request.headers()['content-type'] || '', duplicateQueryKeys: [...new Set(dup)], bodyUserIdDigits: bodyParams && bodyParams.get('user_id') ? bodyParams.get('user_id').length : 0, bodyUserIdTail: bodyParams && bodyParams.get('user_id') ? bodyParams.get('user_id').slice(-4) : '', method: request.method(), path: url.pathname, queryKeys: [...url.searchParams.keys()].filter(key => !/^(?:a_bogus|msToken|verifyFp|fp|webid|uifid)$/.test(key)).slice(0, 12), bodyFields: fields.slice(0, 12) });
+    });
     this.trace.step('session.open', { browser: runtime.source, profileDir: this.profileDir });
     return this;
   }
@@ -76,6 +86,9 @@ class Session {
         this.trace.response('profile/self', { login: 'authenticated' });
       }
       event = { type: 'profileSelf', status, body: json };
+    } else if (/follow/i.test(url.pathname) && !/\/(?:following|follower)\/list/.test(url.pathname)) {
+      const json = await response.json().catch(() => null);
+      this.trace.response('follow-api', { path: url.pathname, status, status_code: json?.status_code, follow_status: json?.follow_status, status_msg: json?.status_msg });
     } else if (API.profileOther.test(url.pathname)) {
       event = { type: 'profileOther', status, body: await response.json().catch(() => null) };
     }

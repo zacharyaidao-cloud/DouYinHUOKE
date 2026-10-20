@@ -38,7 +38,8 @@ if (!source) {
     fs.writeFileSync(cacheMarker, String(revision), 'utf8');
   }
 }
-const executablePath = path.join(launchChromiumDir, 'chrome.exe');
+// VERIFY_CHROME_PATH 可指向本机 Chrome/Edge，便于在没有内置 Chromium 的开发机上运行
+const executablePath = process.env.VERIFY_CHROME_PATH || path.join(launchChromiumDir, 'chrome.exe');
 const lead = { uid: 'qa_outreach_target', homepage: 'https://www.douyin.com/user/qa_outreach_target' };
 const MESSAGE = '只在隔离网页输入\n不会向真实用户发送。';
 const completed = [];
@@ -349,6 +350,34 @@ function stackPageHtml({ chatName = '承恩勇闯亚马逊', profileName = '承�
       const page = await fixture({ stack: true });
       await assert.rejects(adapter.openDirectMessage(page, lead, { beforeUiAction: () => { throw new Error('user stopped'); } }), /user stopped/);
       assert.equal((await actions(page)).open, 0);
+    });
+    await test('Entry click: persistent overlay reports DM_ENTRY_CLICK_BLOCKED without a native click', async () => {
+      const page = await fixture({ stack: true });
+      // A fixed overlay that Escape cannot close covers the whole profile.
+      await page.evaluate(() => { const veil = document.createElement('div'); veil.id = 'qa-veil'; veil.className = 'qa-toast';
+        veil.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.01)'; document.body.appendChild(veil); });
+      assert.equal(await adapter.openDirectMessage(page, lead), false);
+      const diagnostic = adapter.getDiagnostic(page);
+      assert.equal(diagnostic.code, 'DM_ENTRY_CLICK_BLOCKED');
+      assert.match(diagnostic.entryBlocker, /^div\|qa-toast\|/);
+      assert.equal((await actions(page)).open, 0);
+    });
+    await test('Entry click: transient overlay closed by Escape still opens the target chat', async () => {
+      const page = await fixture({ stack: true });
+      await page.evaluate(() => { const veil = document.createElement('div'); veil.id = 'qa-veil';
+        veil.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.01)'; document.body.appendChild(veil);
+        document.addEventListener('keydown', event => { if (event.key === 'Escape') veil.remove(); }); });
+      assert.equal(await adapter.openDirectMessage(page, lead), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead), true, JSON.stringify(adapter.getDiagnostic(page)));
+      assert.equal((await actions(page)).open, 1);
+    });
+    await test('Entry pairing: follow button re-rendered without its marker still pairs the DM entry', async () => {
+      const page = await fixture({ stack: true });
+      const removed = await page.evaluate(() => { const nodes = document.querySelectorAll('#qa-follow');
+        nodes.forEach(node => node.removeAttribute('data-e2e')); return nodes.length; });
+      assert(removed >= 1);
+      assert.equal(await adapter.openDirectMessage(page, lead), true, JSON.stringify(adapter.getDiagnostic(page)));
+      assert.equal((await actions(page)).open, 1);
     });
     await test('Nickname identity: observed legacy avatar and clipped full title permit native send', async () => {
       const page = await fixture({ stack: true, profileName: '蜗牛妈妈跨境创业中', chatName: '蜗牛妈妈跨境创业中',

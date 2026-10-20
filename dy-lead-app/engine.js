@@ -655,9 +655,11 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
         ]);
         let source = paginationSources.get(sourceKey);
         if (!source) {
-          source = { id: paginationSources.size + 1, highestCursor: null, highestRequestCursor: null, observedCommentIds: new Set() };
+          // The ordinary list (no insert_ids) is primary: its end is the work's end.
+          source = { id: paginationSources.size + 1, primary: !address.searchParams.has('insert_ids'), highestCursor: null, highestRequestCursor: null, lastHasMore: null, observedCommentIds: new Set() };
           paginationSources.set(sourceKey, source);
         }
+        const hasMoreValue = [0, 1, '0', '1'].includes(j.has_more) ? Number(j.has_more) : null;
         const newerSourceRequest = requestCursor !== null && (source.highestRequestCursor === null || requestCursor > source.highestRequestCursor);
         const staleSourcePage = requestCursor !== null && source.highestRequestCursor !== null && requestCursor < source.highestRequestCursor
           || !newerSourceRequest && cursor !== null && source.highestCursor !== null && cursor < source.highestCursor;
@@ -668,28 +670,39 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
         const stalePage = requestCursor !== null && highestRequestCursor !== null && requestCursor < highestRequestCursor
           || !newerRequest && cursor !== null && highestCursor !== null && cursor < highestCursor;
         let advanced = !staleSourcePage && cursor !== null && (source.highestCursor === null || cursor > source.highestCursor);
+        // Each list's own completion evidence; only its own older pages are stale.
+        if (!staleSourcePage && hasMoreValue !== null) source.lastHasMore = hasMoreValue;
         if (!staleSourcePage && cursor !== null) source.highestCursor = source.highestCursor === null ? cursor : Math.max(source.highestCursor, cursor);
         if (!staleSourcePage && requestCursor !== null) source.highestRequestCursor = source.highestRequestCursor === null ? requestCursor : Math.max(source.highestRequestCursor, requestCursor);
         if (!stalePage && cursor !== null) highestCursor = highestCursor === null ? cursor : Math.max(highestCursor, cursor);
         if (!stalePage && requestCursor !== null) highestRequestCursor = highestRequestCursor === null ? requestCursor : Math.max(highestRequestCursor, requestCursor);
+        let freshComments = 0;
         for (const comment of comments) {
           const identity = comment.cid != null ? String(comment.cid) : JSON.stringify([comment.user && (comment.user.sec_uid || comment.user.uid), comment.text, comment.create_time, comment.level]);
-          if (!source.observedCommentIds.has(identity)) { source.observedCommentIds.add(identity); if (!staleSourcePage) advanced = true; }
+          if (!source.observedCommentIds.has(identity)) { source.observedCommentIds.add(identity); freshComments++; if (!staleSourcePage) advanced = true; }
         }
-        // Cross-list progress may reset the no-progress counter, but cannot
-        // weaken the existing global guard for stale completion feedback.
-        if (stalePage && ![1, '1'].includes(j.has_more)) advanced = false;
+        // A list's own stale completion page is never progress. A page behind
+        // another list counts only when it brought this list new comments.
+        if (hasMoreValue !== 1 && (staleSourcePage || stalePage && !freshComments)) advanced = false;
         if (advanced) {
           paginationRevision++;
           if (paginationSources.size > 1) store.log(accountId, `采集：分页来源 ${source.id} 已推进（请求游标 ${requestCursor == null ? '未知' : requestCursor}，返回游标 ${cursor == null ? '未知' : cursor}，${comments.length} 条评论${stalePage ? '；低于其他来源游标，仍属本来源有效进展' : ''}）`);
         }
+        // The note renderer's located list may run ahead of the ordinary list,
+        // so completion is per list: the primary list ending, or every list
+        // ending, completes the work even when its cursor is behind another.
+        const previousHasMore = lastHasMore;
+        const sourceStates = [...paginationSources.values()];
+        if (sourceStates.some(state => state.primary && state.lastHasMore === 0) || sourceStates.every(state => state.lastHasMore === 0)) lastHasMore = 0;
+        else if (!stalePage) lastHasMore = hasMoreValue;
         if (!stalePage) {
-          lastHasMore = [0, 1, '0', '1'].includes(j.has_more) ? Number(j.has_more) : null;
           // Some empty final pages reset total to zero; others retain the
           // actual count. Missing/invalid statistics cannot erase a known one.
           if (reportedTotal !== null && !(nullTerminal && reportedTotal === 0 && lastTotal > 0)) lastTotal = reportedTotal;
           lastCursor = j.cursor;
-          if (lastHasMore === 0) store.log(accountId, `采集：目标评论末页已确认（${work.type === 'note' ? '图文' : '视频'}，请求游标 ${requestCursor == null ? '未知' : requestCursor}，返回游标 ${cursor == null ? '未知' : cursor}，has_more=0，评论字段 ${nullTerminal ? 'null（空列表）' : `数组 ${comments.length} 条`}，总评论 ${lastTotal == null ? '未知' : lastTotal}）`);
+        }
+        if (lastHasMore === 0 && previousHasMore !== 0) {
+          store.log(accountId, `采集：目标评论末页已确认（${work.type === 'note' ? '图文' : '视频'}，请求游标 ${requestCursor == null ? '未知' : requestCursor}，返回游标 ${cursor == null ? '未知' : cursor}，has_more=0，评论字段 ${nullTerminal ? 'null（空列表）' : `数组 ${comments.length} 条`}，总评论 ${lastTotal == null ? '未知' : lastTotal}）`);
         }
         const leads = store.getLeads();
         const seen = new Map(leads.map(lead => [dedupeKey(lead), lead]));
@@ -1134,7 +1147,8 @@ const searchTasks = createSearchTasks({
 const { createDmDistribution } = require('./engine-dm-distribution');
 const dmDistribution = createDmDistribution({
   store, taskState, setTask, failTask, checkpoint,
-  createPlan, runOutreach: (accountId, options) => outreachTask(accountId, options), getSignal: () => taskAbort && taskAbort.signal
+  createPlan, runOutreach: (accountId, options) => outreachTask(accountId, options), getSignal: () => taskAbort && taskAbort.signal,
+  closeAccount: accountId => closeAccount(accountId)
 });
 
 function stopTask() {

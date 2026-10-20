@@ -10,7 +10,7 @@ const { ActionScheduler } = require(path.join(testApp, 'scheduler'));
 const W = require(path.join(testApp, 'workflow'));
 const AI = require(path.join(testApp, 'ai'));
 const { EventEmitter } = require('node:events');
-function fixture({ count = 1, verifier, revokeAt, authorizeHook, onFocus, onSend, missingDm = false, editorMissing = false, diagnostic = {}, sendThrows = false, sendPreflightError = false, sendMissing = false, sendOutcome = true, health = 'ok', mutateAfterVisit, initialLead, actionIntervalSec = 0, human = {}, waitHook, followReceipt = 'success', followOutcome = 'clicked', followThrows = false, followPreflightError = false, followClickHook, navigateProfilePage, signal, beforeAdapterUiAction, selectConversation = false, profileRelation, dmHistory, lateDmHistory, repeat, domHistory, dmFeedback, crossAccount = false, leadAccountId = '1', planActions = { follow: true, dm: true } } = {}) {
+function fixture({ dmAccountState = null, count = 1, verifier, revokeAt, authorizeHook, onFocus, onSend, missingDm = false, editorMissing = false, diagnostic = {}, sendThrows = false, sendPreflightError = false, sendMissing = false, sendOutcome = true, health = 'ok', mutateAfterVisit, initialLead, actionIntervalSec = 0, human = {}, waitHook, followReceipt = 'success', followOutcome = 'clicked', followThrows = false, followPreflightError = false, followClickHook, navigateProfilePage, signal, beforeAdapterUiAction, selectConversation = false, profileRelation, dmHistory, lateDmHistory, repeat, domHistory, dmFeedback, crossAccount = false, leadAccountId = '1', planActions = { follow: true, dm: true } } = {}) {
   const settings = { ai: { prompt: '需求规则' }, action: { pacingVersion: 1, userIntervalSec: actionIntervalSec, userIntervalJitter: 0 }, human: { workPeriods: [], breakEvery: 0, maxConsecutiveErrors: 3, ...human }, follow: { enabled: true, dailyLimit: 20, intervalMinSec: 100, intervalMaxSec: 200 }, dm: { enabled: true, dailyLimit: 20, template: '你好', intervalMinSec: 200, intervalMaxSec: 300, repeat: { enabled: false } }, outreach: { businessId: 'default' } };
   if (repeat) settings.dm.repeat = repeat;
   let leads = Array.from({ length: count }, (_, i) => {
@@ -30,6 +30,9 @@ function fixture({ count = 1, verifier, revokeAt, authorizeHook, onFocus, onSend
     getDailyUsage: () => ({ ...usage }), bumpDaily: (id, field) => { usage[field] = (usage[field] || 0) + 1; },
     nowStr: () => '2026-10-08 12:00:00', log: (accountId, message) => logs.push(message)
   };
+  // 可选：账号状态存储（强制休息计数持久化测试用）；{ value } 由测试持有
+  if (dmAccountState) Object.assign(store, { opDayStr: () => '2026-10-08',
+    getDmAccountState: () => structuredClone(dmAccountState.value || {}), setDmAccountState: next => { dmAccountState.value = structuredClone(next); } });
   const page = new EventEmitter(), frame = { page: () => page };
   const emitFollow = () => {
     const uid = new URL(currentUrl).pathname.split('/').pop();
@@ -639,7 +642,7 @@ test('四位用户明确互关限制只计各自失败，通用拒绝保护不�
     dmFeedback: { state: 'ready', restriction: { code: 'DM_RECIPIENT_MUTUAL_ONLY', reason: '对方仅允许互关用户私信', evidence: 'matched-chat+platform-recipient-notice' } },
     verifier: async () => ({ state: 'confirmed_failure', reason: '消息检查未通过', evidence: 'matched server rejection' }) });
   const result = await f.actions.outreachTask('1', { planId: 'plan' });
-  assert.equal(result.ok, true); assert.equal(result.failedCount, 4); assert.equal(f.state.done, 4);
+  assert.equal(result.ok, true); assert.equal(result.failedCount, 4); assert.equal(f.state.done, 4); assert.deepEqual(result.processedLeadIds, ['1', '2', '3', '4']);
   assert(f.leads().every(lead => lead.dmState === 'confirmed_failure' && lead.dmFailedReason.includes('DM_RECIPIENT_MUTUAL_ONLY') && !lead.noDm));
 });
 
@@ -652,6 +655,8 @@ test('本次回执账号频繁或当日上限立即暂停，只保存第一位�
     assert.equal(f.visited.length, 1); assert.deepEqual(f.clicked, ['dm']); assert.equal(f.usage.dmAttempts, 1);
     assert.equal(f.leads()[0].dmState, 'confirmed_failure'); assert.equal(f.leads()[0].dmCount || 0, 0);
     assert.equal(f.leads()[1].dmState, undefined); assert.equal(f.checkpoint().state, 'paused');
+    // 分发据此回池：触发账号限制的那位用户不算已处理，后续用户也未处理
+    assert.deepEqual(result.processedLeadIds, []); assert.equal(result.pausedLeadId, '1');
   }
 });
 
@@ -846,7 +851,7 @@ test('未找到私信输入框记录可区分诊断，但不记录任意页面�
 
 test('私信入口各类未点击原因分别落库，保留关注成功且无私信次数或永久禁发结论', async () => {
   for (const [code, phrase] of [['DM_ENTRY_NOT_FOUND', '没有可识别'], ['DM_ENTRY_AMBIGUOUS', '多个候选'],
-    ['DM_ENTRY_CHANGED', '重绘或改变'], ['DM_ENTRY_UNAVAILABLE', '当前不可操作']]) {
+    ['DM_ENTRY_CHANGED', '重绘或改变'], ['DM_ENTRY_UNAVAILABLE', '当前不可操作'], ['DM_ENTRY_CLICK_BLOCKED', '浮层遮挡或点击超时']]) {
     const f = fixture({ missingDm: true, diagnostic: { code, visibleControlCount: 7, profileControlCount: 2,
       targetConversationRowCount: -1, message: 'private-diagnostic-body', selector: '#private-selector', uid: 'private-uid' } });
     const result = await f.actions.outreachTask('1', { planId: 'plan' }), lead = f.leads()[0];
@@ -868,7 +873,8 @@ test('私信入口各类未点击原因分别落库，保留关注成功且无�
 
 test('仅消息列表、目标会话未就绪和身份未确认有独立阶段诊断，未发送不计尝试', async () => {
   for (const [code, phrase, paused] of [['DM_MESSAGE_LIST_ONLY', '仅显示消息列表', false],
-    ['DM_TARGET_CHAT_NOT_READY', '目标会话尚未就绪', false], ['DM_RECIPIENT_UNCONFIRMED', '会话接收人身份', true]]) {
+    // 接收人未确认是用户级：本用户失败、继续下一位，不再整任务暂停（修复指南 6.3）
+    ['DM_TARGET_CHAT_NOT_READY', '目标会话尚未就绪', false], ['DM_RECIPIENT_UNCONFIRMED', '会话接收人身份', false]]) {
     const f = fixture({ editorMissing: true, diagnostic: { code, messageListCount: 1, targetConversationRowCount: 0,
       visibleEditorCount: 1, eligibleEditorCount: 1, conversationEditorCount: 0, iframeCount: 0, body: 'private-chat-body' } });
     const result = await f.actions.outreachTask('1', { planId: 'plan' }), lead = f.leads()[0];
@@ -970,4 +976,55 @@ test('单账号任务仍拒绝执行其他账号的线索', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.skipped, 1);
   assert.deepEqual(f.clicked, []);
+});
+
+test('错误分级：接收人未确认、会话/输入框变化降为用户级继续下一位；接收人明确不一致仍立即暂停', async () => {
+  for (const code of ['DM_RECIPIENT_UNCONFIRMED', 'DM_COMPOSER_CHANGED', 'DM_PREVIOUS_CONVERSATION_UNCONFIRMED', 'DM_RECIPIENT_MISMATCH']) {
+    const f = fixture({ count: 2, editorMissing: true, diagnostic: { code } });
+    const result = await f.actions.outreachTask('1', { planId: 'plan' });
+    const paused = code === 'DM_RECIPIENT_MISMATCH';
+    assert.equal(result.ok, !paused, code);
+    assert.equal(f.visited.length, paused ? 1 : 2, code + (paused ? ' 立即暂停' : ' 继续下一位'));
+    assert.equal(f.checkpoint().state, paused ? 'paused' : 'completed');
+    assert.match(f.leads()[0].dmFailedReason, new RegExp(code));
+    assert.equal(f.usage.dmAttempts || 0, 0);
+    if (!paused) { assert.equal(result.failedCount, 2); assert.deepEqual(result.processedLeadIds, ['1', '2']); }
+  }
+});
+
+test('私信强制休息计数按账号持久化：新任务接着上次计数，到点后强制休息并写回', async () => {
+  const success = async () => ({ state: 'confirmed_success', evidence: 'matching current send receipt' });
+  // 上次（另一批）已连续成功 4 条：本批第 1 条成功即达到默认 5 条，第 2 条前必须休息
+  const saved = { value: { '1': { opDay: '2026-10-08', dmSession: { count: 4, pauseUntil: 0, opDay: '2026-10-08' } } } };
+  const f = fixture({ count: 2, dmAccountState: saved, profileRelation: { state: 'following' }, verifier: success });
+  const result = await f.actions.outreachTask('1', { planId: 'plan' });
+  assert.equal(result.ok, true); assert.equal(result.dmCount, 2);
+  assert.ok(f.stages.includes('waiting_dm_session'), '沿用上次计数，第 2 条前强制休息');
+  assert.equal(saved.value['1'].dmSession.count, 1, '休息后重新计数并写回');
+  assert.ok(saved.value['1'].dmSession.pauseUntil > 0);
+  assert.equal(saved.value['1'].opDay, '2026-10-08', '账号条目的其他字段保留');
+  // 新任务读入未到期的休息截止时间：第一条私信前就要等
+  const until = Date.parse('2026-10-08T02:00:00Z') + 3600 * 1000;
+  const pending = { value: { '1': { dmSession: { count: 0, pauseUntil: until, opDay: '2026-10-08' } } } };
+  const g = fixture({ dmAccountState: pending, profileRelation: { state: 'following' }, verifier: success });
+  await g.actions.outreachTask('1', { planId: 'plan' });
+  assert.ok(g.stages.includes('waiting_dm_session'), '上一批设置的休息跨批次生效');
+  // 跨运营日：旧计数清零，不会因为昨天的条数立即休息
+  const stale = { value: { '1': { dmSession: { count: 4, pauseUntil: 0, opDay: '2026-10-07' } } } };
+  const h = fixture({ count: 2, dmAccountState: stale, profileRelation: { state: 'following' }, verifier: success });
+  await h.actions.outreachTask('1', { planId: 'plan' });
+  assert.equal(h.stages.includes('waiting_dm_session'), false);
+  assert.equal(stale.value['1'].dmSession.count, 2);
+});
+
+test('入口点击被遮挡：失败原因带说明，遮挡元素写进诊断日志并截断', async () => {
+  const blocker = 'DIV|' + 'x'.repeat(200) + '|login-mask';
+  const f = fixture({ missingDm: true, diagnostic: { code: 'DM_ENTRY_CLICK_BLOCKED', entryBlocker: blocker } });
+  const result = await f.actions.outreachTask('1', { planId: 'plan' });
+  assert.equal(result.ok, true); assert.equal(result.failedCount, 1);
+  assert.match(f.leads()[0].dmFailedReason, /DM_ENTRY_CLICK_BLOCKED.*浮层遮挡或点击超时/);
+  const diagnostic = JSON.parse(f.logs.find(item => item.startsWith('私信界面检查：')).slice('私信界面检查：'.length));
+  assert.equal(diagnostic.code, 'DM_ENTRY_CLICK_BLOCKED');
+  assert.equal(diagnostic.entryBlocker, blocker.slice(0, 120));
+  assert.equal(f.usage.dmAttempts || 0, 0);
 });

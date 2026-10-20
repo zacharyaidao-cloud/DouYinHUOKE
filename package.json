@@ -1,0 +1,15 @@
+{
+  "name": "huamao-douyin-lead",
+  "private": true,
+  "description": "华贸获客（抖音获客软件）源码运行入口：安装依赖、启动、测试",
+  "scripts": {
+    "setup": "npm --prefix dy-lead-app install",
+    "start": "node dy-lead-app/server.js",
+    "desktop": "npx --yes electron@44.6.0 desktop",
+    "test": "cd dy-lead-app && node --test --test-reporter=dot",
+    "verify:outreach": "node build-tools/verify-outreach-browser.js --source"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

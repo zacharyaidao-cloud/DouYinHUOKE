@@ -14,16 +14,20 @@ const store = require('../store');
 const AI = require('../ai');
 const workflow = require('../workflow');
 
-function makeFixture({ responses = {}, trackCalls = null, onSetTask = null, guardRunning = false } = {}) {
+function makeFixture({ responses = {}, trackCalls = null, onSetTask = null, guardRunning = false, fakeClock = false, recordUsage = false, closeAccount = null } = {}) {
   const taskState = { running: false, stopRequested: false, distributionActive: false, stopEpoch: 0, status: '', errors: [] };
-  const setTask = patch => { Object.assign(taskState, patch); if (onSetTask) onSetTask(patch, taskState); };
+  // fakeClock：sleep 只推进虚拟时间，账号切换间隔与冷却等待瞬间完成
+  let fakeNow = Date.now();
+  const clock = { now: () => fakeNow, sleep: async ms => { fakeNow += Math.max(0, ms); await new Promise(setImmediate); } };
+  const setTask = patch => { Object.assign(taskState, patch); if (onSetTask) onSetTask(patch, taskState, clock); };
   const failTask = msg => { taskState.status = msg; return { ok: false, error: msg }; };
   const checkpoint = () => {};
   const calls = [];
-  let lastBatchSize = 3;
+  const batches = []; // [accountId, leadIds, result]
+  let lastBatchIds = [];
   const createPlan = (accountId, kind, options) => {
     calls.push(['plan', accountId, options && options.leadIds]);
-    lastBatchSize = (options && options.leadIds || []).length;
+    lastBatchIds = (options && options.leadIds || []).map(String);
     return { id: 'plan-' + accountId + '-' + calls.length, planId: 'plan-' + accountId + '-' + calls.length, accountId: String(accountId), kind: 'outreach', crossAccount: true, actions: { follow: false, dm: true }, dmTemplate: options.dmTemplate || '话术' };
   };
   const runOutreach = async (accountId, options) => {
@@ -32,11 +36,20 @@ function makeFixture({ responses = {}, trackCalls = null, onSetTask = null, guar
     // 模拟真实 runTask 第一行的任务锁守卫：分发器必须先释放 running，否则每个批次都被拒
     if (guardRunning && taskState.running) return { ok: false, error: '已有任务在运行' };
     const scripted = responses[key];
-    if (Array.isArray(scripted) && scripted.length) return scripted.shift();
-    return { ok: true, dmCount: lastBatchSize, pendingCount: 0, failedCount: 0, skipped: 0 };
+    let result;
+    if (Array.isArray(scripted) && scripted.length) {
+      const next = scripted.shift();
+      result = typeof next === 'function' ? next(lastBatchIds) : next;
+    } else {
+      result = { ok: true, dmCount: lastBatchIds.length, pendingCount: 0, failedCount: 0, skipped: 0 };
+    }
+    // 模拟真实 runTask 记账：成功私信计入当日用量，分配时才能看到已执行量
+    if (recordUsage) for (let i = 0; i < (Number(result.dmCount) || 0); i++) { store.bumpDaily(key, 'dm'); store.bumpDaily(key, 'dmAttempts'); store.bumpDaily(key, 'profileVisits'); }
+    batches.push([key, [...lastBatchIds], result]);
+    return result;
   };
-  const dist = createDmDistribution({ store, taskState, setTask, failTask, checkpoint, createPlan, runOutreach, getSignal: () => null });
-  return { taskState, calls, dist, runOutreach };
+  const dist = createDmDistribution({ store, taskState, setTask, failTask, checkpoint, createPlan, runOutreach, getSignal: () => null, ...(fakeClock ? clock : {}), ...(closeAccount ? { closeAccount } : {}) });
+  return { taskState, calls, batches, clock, dist, runOutreach };
 }
 
 function seedLeads(accounts, works) {
@@ -87,10 +100,20 @@ test('账号级信号分类：频繁/上限/接收人/未知回退', () => {
   assert.equal(classifyAccountSignal('PLATFORM_DAILY_LIMIT', '今日关注或私信次数已达上限'), 'daily_limit');
   assert.equal(classifyAccountSignal('', '今日私信发送次数已达上限'), 'daily_limit');
   assert.equal(classifyAccountSignal('', '发送太频繁了，稍后再试'), 'frequent');
-  assert.equal(classifyAccountSignal('', '服务端拒绝本次私信：消息检查未通过（检查码：2）'), 'frequent');
+  // 检查码本身不说明是账号级：只有 dm-rejection 精确识别的账号级回执才算频繁/上限
+  assert.equal(classifyAccountSignal('', '服务端拒绝本次私信：消息检查未通过（检查码：2）'), null);
+  assert.equal(classifyAccountSignal('', '[DM_ACCOUNT_FREQUENT] 平台提示私信操作频繁'), 'frequent');
+  assert.equal(classifyAccountSignal('', '[DM_ACCOUNT_DAILY_LIMIT] 平台提示今日陌生人私信已达上限'), 'daily_limit');
+  assert.equal(classifyAccountSignal('', '[DM_RECIPIENT_MUTUAL_ONLY] 对方仅允许互关用户私信'), 'recipient');
+  assert.equal(classifyAccountSignal('', '给陌生人发送消息过于频繁，请稍后再发送陌生人消息'), 'frequent');
+  assert.equal(classifyAccountSignal('', '今日陌生人私信已达上限'), 'daily_limit');
   assert.equal(classifyAccountSignal('', '对方仅自己可见，无法私信'), 'recipient');
   assert.equal(classifyAccountSignal('', '无法归类的未知文案'), null);
   assert.equal(classifyAccountSignal(null, ''), null);
+  // 泛化的“稍后再试”不再算频繁；接收人级先于频繁判断
+  assert.equal(classifyAccountSignal('', '网络异常，请稍后再试'), null);
+  assert.equal(classifyAccountSignal('', '对方已关闭私信，请稍后再试'), 'recipient');
+  assert.equal(classifyAccountSignal('', '发送消息过于频繁，请稍后再试'), 'frequent');
 });
 
 test('冷却逐次翻倍并封顶2小时', () => {
@@ -292,4 +315,192 @@ test('分发预览列出被排除原因与去重数量', () => {
   assert.equal(p.totalCandidates, 2);
   assert.ok(p.exclusions.some(item => /AI|人工|判断/.test(item.reason)), JSON.stringify(p.exclusions));
   assert.equal(p.exclusions.reduce((sum, item) => sum + item.count, 0), 1);
+});
+
+/* ---------- 回池合并 / 冷却等待 / 部分处理（修复指南 7.3 M1 M2 M3 M5 M9） ---------- */
+
+const executedOk = (batches, accountId) => batches.filter(([id, , r]) => id === accountId && r.ok).flatMap(([, ids]) => ids);
+
+test('分发：2账号各10人、A首批频繁 → 剩余用户全部回池不丢失、重新分配不超额、冷却结束后A继续', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5001, count: 10 }, { id: 5002, count: 10 }]);
+  const waits = [];
+  const f = makeFixture({
+    fakeClock: true, recordUsage: true,
+    responses: { '1': [{ ok: false, error: '操作频繁，请稍后再试', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] }] },
+    onSetTask: (patch, state) => { if (patch.stage === 'waiting_cooldown') waits.push(patch); }
+  });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.totalCandidates, 20);
+  // 首次分配各 10 人
+  const firstA = f.calls.find(c => c[1] === '1')[2].map(String);
+  assert.equal(firstA.length, 3);
+  // B 已预留 10 人、额度 10：A 回池的 10 人不能再分给 B（不超额）
+  const okB = executedOk(f.batches, '2');
+  assert.equal(okB.length, 10, 'B 只执行自己额度内的 10 人');
+  assert.ok(f.calls.filter(c => c[1] === '2').every(c => c[2].length <= 3));
+  assert.equal(store.getDailyUsage('2').dm, 10, 'B 当日私信不超过上限');
+  // 只有 A 在冷却：等待冷却结束而不是结束任务，之后 A 继续执行回池用户
+  assert.ok(waits.length > 0, '进入冷却等待');
+  assert.match(waits[0].status, /冷却.*可随时停止/);
+  assert.ok(waits[0].waitingUntil, '界面可显示倒计时');
+  const okA = executedOk(f.batches, '1');
+  assert.equal(okA.length, 10);
+  assert.ok(firstA.every(id => okA.includes(id)), 'A 首批被频繁打断的用户在冷却后重新执行');
+  // 没有用户消失：20 人每人恰好成功执行一次
+  const all = [...okA, ...okB];
+  assert.equal(all.length, 20);
+  assert.equal(new Set(all).size, 20);
+  assert.equal(result.done, 20);
+  assert.equal(result.success, 20);
+  assert.equal(result.unassigned, 0);
+  assert.equal(result.stopReason, '');
+  assert.ok(Object.values(store.getAllocations()).every(e => e.consumed === true), '没有残留未消费的分配锁');
+});
+
+test('分发：唯一账号频繁 → 等待冷却而非结束，等待中停止立即生效且用户保留待分配', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5003, count: 6 }]);
+  let stoppedAt = null;
+  const calls = [];
+  const f = makeFixture({
+    fakeClock: true, trackCalls: calls,
+    responses: { '1': [{ ok: false, error: '操作频繁', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] }] },
+    onSetTask: (patch, state, clock) => {
+      if (patch.stage === 'waiting_cooldown' && stoppedAt === null) {
+        stoppedAt = clock.now();
+        state.stopRequested = true;
+        state.stopEpoch = (Number(state.stopEpoch) || 0) + 1;
+      }
+    }
+  });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  assert.notEqual(stoppedAt, null, '没有直接结束，而是进入冷却等待');
+  assert.equal(result.ok, false);
+  assert.match(result.error, /停止/);
+  assert.equal(calls.length, 1, '冷却期内不再执行');
+  const until = store.getDmAccountState()['1'].frequentUntil;
+  assert.ok(until > f.clock.now(), '停止立即生效，没有等到冷却结束');
+  assert.ok(f.clock.now() - stoppedAt <= 1000, '停止后最多一个检查周期');
+  assert.equal(result.unassigned, 6, '剩余 6 人保留待分配');
+  assert.equal(result.done, 0);
+});
+
+test('分发：批次第3人遇今日上限 → 汇总含前2人成功，只有后3人回池并交给其他账号', async () => {
+  freshSettings();
+  const s = store.getSettings(); s.dm.batchPerAccount = 5; store.setSettings(s);
+  seedLeads([1], [{ id: 5004, count: 5 }, { id: 5005, count: 5 }]);
+  let batchA = null;
+  const f = makeFixture({
+    fakeClock: true, recordUsage: true,
+    responses: { '1': [ids => { batchA = ids; return { ok: false, error: '今日私信已达上限', errorCode: 'PLATFORM_DAILY_LIMIT', dmCount: 2, failedCount: 1, pendingCount: 0, skipped: 0, processedLeadIds: ids.slice(0, 2), pausedLeadId: ids[2] }; }] }
+  });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(batchA.length, 5);
+  assert.equal(result.perAccount['1'].success, 2, 'A 本批前 2 人成功计入汇总');
+  assert.equal(result.perAccount['1'].count, 2, 'A 名下只保留已处理的 2 人');
+  const plansB = f.calls.filter(c => c[1] === '2').map(c => c[2].map(String));
+  const rePooled = plansB.flat().filter(id => batchA.includes(id));
+  assert.deepEqual(rePooled.sort(), batchA.slice(2).sort(), '只有第 3～5 人回池并由 B 执行');
+  assert.equal(result.success, 10);
+  assert.equal(result.done, 10);
+  assert.equal(result.unassigned, 0);
+  const allocations = store.getAllocations();
+  const settings = store.getSettings();
+  const rows = store.getLeads();
+  for (const id of batchA.slice(0, 2)) {
+    const entry = allocations[workflow.contactKey(rows.find(l => String(l.id) === id), settings)];
+    assert.equal(entry.accountId, '1'); assert.equal(entry.consumed, true);
+  }
+  assert.ok(store.getDmAccountState()['1'].disabledUntil > Date.now(), 'A 今日停用');
+});
+
+test('分发：用户级连续异常/无法归类的失败不作废账号，未处理用户回池后由该账号下轮继续', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5006, count: 4 }, { id: 5007, count: 2 }]);
+  const calls = [];
+  const consecutive = ids => ({ ok: false, error: '连续 3 个用户处理异常，已保存本次结果并暂停', errorCode: 'CONSECUTIVE_ERRORS', dmCount: 0, failedCount: 1, processedLeadIds: ids.slice(0, 1) });
+  const f = makeFixture({ fakeClock: true, trackCalls: calls, responses: { '1': [consecutive, consecutive] } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(calls.length, 4, '连续两批用户级中断后账号仍继续执行，没有被判为异常');
+  assert.equal(result.done, 6);
+  assert.equal(result.success, 4);
+  assert.equal(result.unassigned, 0);
+  assert.equal(store.getDmAccountState()['1'] && store.getDmAccountState()['1'].lastStopReason, undefined, '账号没有记异常');
+});
+
+test('分发：同一账号连续两批一个用户都没处理成才判异常，防止空转', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5008, count: 6 }]);
+  const calls = [];
+  const broken = { ok: false, error: '浏览器启动失败', errorCode: 'BROWSER_LAUNCH_FAILED', processedLeadIds: [] };
+  const f = makeFixture({ fakeClock: true, trackCalls: calls, responses: { '1': [broken, { ...broken }] } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(calls.filter(id => id === '1').length, 2);
+  assert.equal(result.done, 6, '账号1的用户全部由账号2完成');
+  assert.equal(result.unassigned, 0);
+});
+
+test('分发：授权失效（AUTH_*）整体暂停，不再换号，剩余用户保留待分配', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5009, count: 6 }]);
+  const calls = [];
+  const f = makeFixture({ fakeClock: true, trackCalls: calls, responses: { '1': [{ ok: false, error: '授权失效，任务已暂停', errorCode: 'AUTH_REQUIRED', processedLeadIds: [] }] } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /授权/);
+  assert.deepEqual(calls, ['1']);
+  assert.equal(result.unassigned, 6);
+});
+
+test('分发：切到下一个账号前关闭上一个账号浏览器；同账号连续执行不关闭；设置关闭后不关', async () => {
+  for (const enabled of [true, false]) {
+    freshSettings();
+    const s = store.getSettings(); s.dm.closeBrowserBetweenAccounts = enabled; store.setSettings(s);
+    seedLeads([1], [{ id: 5010, count: 6 }, { id: 5011, count: 3 }]);
+    // 账号2今日只剩 2 条额度：账号1会连续执行多批（同账号连续执行不应关闭）
+    for (let i = 0; i < 8; i++) store.bumpDaily('2', 'dm');
+    const order = [];
+    const f = makeFixture({
+      fakeClock: true, trackCalls: order,
+      closeAccount: async id => { order.push('close:' + id); }
+    });
+    const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+    assert.equal(result.ok, true, result.error);
+    const closes = order.filter(x => x.startsWith('close:'));
+    if (!enabled) { assert.deepEqual(closes, []); continue; }
+    assert.ok(closes.length > 0);
+    // 每次关闭都发生在切换账号之间：关闭的是上一个执行的账号，紧接着执行的是另一个账号
+    order.forEach((x, i) => {
+      if (!x.startsWith('close:')) return;
+      const closed = x.slice(6);
+      assert.equal(order[i - 1], closed, '关闭的是刚执行完的账号');
+      if (order[i + 1]) assert.notEqual(order[i + 1], closed, '不关闭马上要执行的账号');
+    });
+    const runs = order.filter(x => !x.startsWith('close:'));
+    assert.ok(runs.some((x, i) => runs[i + 1] === x), '存在同账号连续执行');
+  }
+});
+
+test('分发保存账号状态时不覆盖批次中写入的强制休息计数', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5012, count: 6 }]);
+  const f = makeFixture({
+    fakeClock: true,
+    responses: { '1': [() => {
+      const st = store.getDmAccountState();
+      st['1'] = { ...(st['1'] || {}), dmSession: { count: 3, pauseUntil: 0, opDay: store.opDayStr() } };
+      store.setDmAccountState(st);
+      return { ok: false, error: '操作频繁', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] };
+    }] }
+  });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.ok, true, result.error);
+  const entry = store.getDmAccountState()['1'];
+  assert.ok(entry.frequentUntil > 0, '频繁冷却已记录');
+  assert.equal(entry.dmSession && entry.dmSession.count, 3, 'runTask 写入的强制休息计数保留');
 });

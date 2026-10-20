@@ -9,6 +9,8 @@ const { REJECTION_RULES } = require('./dm-rejection');
 // A readiness deadline, not an action delay: ready controls continue immediately.
 const WAIT_MS = 8000;
 const CLICK_MS = 2000;
+// The profile DM entry can sit under a short-lived toast or popover.
+const ENTRY_CLICK_MS = 5000;
 
 function remember(page, result) {
   const diagnostic = { code: result.code || (result.state === 'ambiguous' ? 'DM_EDITOR_AMBIGUOUS' : 'DM_EDITOR_NOT_FOUND'),
@@ -148,6 +150,14 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
     for (let group = control.parentElement; group && group !== root; group = group.parentElement) {
       const follows = Array.from(group.querySelectorAll('[data-e2e="user-info-follow-btn"]')).filter(e => visible(e) && !recipientInfo(e).mismatch);
       if (follows.length === 1) return true;
+      // After a follow click the platform may re-render the button as
+      // "已关注/互相关注" without the original marker. Accept exactly one
+      // follow-state control in the same action group as the pairing anchor.
+      if (!follows.length) {
+        const states = Array.from(group.querySelectorAll('button,[role="button"]')).filter(e => visible(e) && e !== control && !e.contains(control)
+          && label(e).some(value => /^(?:[+＋]\s*)?(?:关注|回关|已关注|关注中|互相关注|相互关注)$/.test(value)));
+        if (states.length === 1) return true;
+      }
     }
     return false;
   };
@@ -157,7 +167,15 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
     // (including an entire emoji-only name). Preserve order, emoji and joiners.
     const emojiText = image => {
       const alt = attr(image, 'alt');
-      if (!alt || [...alt].length > 64 || !/[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(alt)) return null;
+      // Badge/decoration images (verification marks, level icons) carry no
+      // emoji alt; they are not part of the name. Ignore them instead of
+      // invalidating the whole nickname. Emoji-like images still must match.
+      if (!alt || !/[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(alt)) {
+        // An emoji asset without a usable alt is still an unknown name part.
+        const emojiAsset = [attr(image, 'src'), image.currentSrc || ''].some(value => /\/(?:twemoji|emoji)\//i.test(value));
+        return emojiAsset ? null : '';
+      }
+      if ([...alt].length > 64) return null;
       const codepoints = [...alt].filter(char => char !== '\ufe0f').map(char => char.codePointAt(0).toString(16)).join('-');
       const matches = value => {
         try {
@@ -174,7 +192,9 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
       if (node.nodeType !== 1) return '';
       if (!visible(node)) return '';
       if (node.tagName === 'IMG') return emojiText(node);
-      if (['SVG', 'CANVAS', 'VIDEO', 'IFRAME'].includes(node.tagName.toUpperCase())) return null;
+      // Inline SVG icons (badges) are decoration, not name text.
+      if (node.tagName.toUpperCase() === 'SVG') return '';
+      if (['CANVAS', 'VIDEO', 'IFRAME'].includes(node.tagName.toUpperCase())) return null;
       let value = '';
       for (const child of node.childNodes) {
         const part = read(child);
@@ -612,7 +632,34 @@ async function openDirectMessage(page, lead, options = {}) {
     check(options); assertTarget(page, lead);
     // Click the verified DOM node, not a positional selector which could now
     // resolve to a global inbox button after a responsive React replacement.
-    await handle.click({ timeout: CLICK_MS });
+    // A Playwright actionability timeout means no click was dispatched (e.g. a
+    // toast or recommendation popover covers the entry). Close transient
+    // overlays once and retry the same verified node; otherwise report it as a
+    // classified entry failure instead of an unclassified exception.
+    let clicked = false, blocker = '';
+    for (let attempt = 0; attempt < 2 && !clicked; attempt++) {
+      try {
+        await handle.scrollIntoViewIfNeeded({ timeout: ENTRY_CLICK_MS }).catch(() => {});
+        await handle.click({ timeout: ENTRY_CLICK_MS });
+        clicked = true;
+      } catch (error) {
+        if (error.name !== 'TimeoutError') throw error;
+        blocker = await handle.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          if (!hit || element.contains(hit)) return '';
+          return [hit.tagName.toLowerCase(), String(hit.getAttribute('class') || '').slice(0, 60), hit.getAttribute('data-e2e') || ''].join('|');
+        }).catch(() => '');
+        if (attempt === 0) {
+          check(options);
+          await page.keyboard.press('Escape').catch(() => {});
+          await page.waitForTimeout(300);
+          check(options); assertTarget(page, lead);
+          if (!await sameElement(page, descriptor.path, handle)) break;
+        }
+      }
+    }
+    if (!clicked) return remember(page, { code: 'DM_ENTRY_CLICK_BLOCKED', diagnostic: { entryBlocker: blocker || 'unknown' } });
     conversations.set(page, { uid: targetUid(lead), opened: true, baseline, conversationSelected: false, profileIdentity: clickProfileIdentity });
     return true;
   }

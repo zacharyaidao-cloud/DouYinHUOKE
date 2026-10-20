@@ -9,7 +9,7 @@ function bounded(value, fallback, min = 0, max = 86400) {
 }
 
 class ActionScheduler {
-  constructor({ settings, stopped, authorize, sleep, update = () => {}, now = Date.now, random = Math.random, errorBoundary = 'action' }) {
+  constructor({ settings, stopped, authorize, sleep, update = () => {}, now = Date.now, random = Math.random, errorBoundary = 'action', dmSession = null }) {
     this.settings = settings; this.stopped = stopped; this.authorize = authorize;
     this.sleep = sleep; this.update = update; this.now = now; this.random = random;
     // 独立截止时间，避免翻页、作品和用户间隔互相叠加。
@@ -20,6 +20,7 @@ class ActionScheduler {
     // 私信会话级冷却：每成功发送 N 条后强制休息随机 Pmin~Pmax 秒
     this.dmSessionCount = 0;
     this.dmSessionPauseUntil = 0;
+    this.restoreDmSession(dmSession);
     this.errorBoundary = errorBoundary;
   }
   checkStopped() { if (this.stopped()) throw new TaskStopError(); }
@@ -31,6 +32,13 @@ class ActionScheduler {
       maxMs: Math.max(bounded(pause.pauseMinSec, 60, 5, 86400), bounded(pause.pauseMaxSec, 300, 5, 86400)) * 1000
     };
   }
+  // 强制休息的计数与截止时间按账号持久化（每批新建调度器也能接着算），见 engine-actions runTask
+  restoreDmSession(saved) {
+    if (!saved || typeof saved !== 'object') return;
+    this.dmSessionCount = Math.max(0, Math.floor(Number(saved.count) || 0));
+    this.dmSessionPauseUntil = Math.max(0, Number(saved.pauseUntil) || 0);
+  }
+  dmSessionState() { return { count: this.dmSessionCount, pauseUntil: this.dmSessionPauseUntil }; }
   afterDmSent() {
     const pause = this.dmSessionPause();
     this.dmSessionCount++;

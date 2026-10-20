@@ -92,3 +92,8 @@ license-server/部署维护说明.md
 license-server/使用说明.md
 license-admin-web/部署维护说明.md
 license-admin-web/网页管理上线验收-*.json
+
+# 本地验证脚本的输出
+build-tools/outreach-browser-source*-verification.json
+dy-lead-app/node_modules/
+node_modules/

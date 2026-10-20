@@ -153,6 +153,24 @@ test('其他分页来源较旧的完成反馈不能覆盖高游标尚有更多�
   assert(!f.logs.some(message => message.includes('末页已确认')));
 });
 
+test('图文两来源交错：定位列表游标更深时，普通列表在较小游标处 has_more=0 仍确认完成', async () => {
+  const located = { pc_img_format: 'webp', insert_ids: '' }, ordinary = { pc_img_format: 'webp' };
+  const rows = (start, end) => Array.from({ length: end - start + 1 }, (_, index) => ({ ...comment('interleaved-' + (start + index)), cid: 'cid-' + (start + index) }));
+  const page = (requestCursor, cursor, params, comments, hasMore = 1) => ({ requestCursor, params, body: { status_code: 0, comments, has_more: hasMore, cursor, total: 30 } });
+  const f = fixture({ maxScrolls: 120, responses: [
+    page(0, 20, located, rows(1, 20)), page(20, 40, located, rows(21, 30))
+  ], scrollResponses: [
+    page(0, 20, ordinary, rows(1, 20)), page(20, 30, ordinary, rows(21, 30), 0)
+  ] });
+  const result = await f.run();
+  assert.equal(result.complete, true); assert.equal(f.scrolls(), 2);
+  assert.equal(f.store.leads.length, 30); assert.equal(f.store.videos[f.workId].collectionState, 'complete');
+  const checkpoint = f.store.videos[f.workId].collectionCheckpoint;
+  assert.equal(checkpoint.lastHasMore, 0); assert.equal(checkpoint.paginationSourceCount, 2); assert.equal(checkpoint.noProgressRounds, 0);
+  assert(f.logs.some(message => message.includes('末页已确认') && message.includes('请求游标 20，返回游标 30')));
+  assert(!f.logs.some(message => message.includes('暂停诊断'))); assert.equal(f.listener(), null);
+});
+
 test('现场 cursor70→80 的 null 末页确认完成，保留已有评论与之前总量且不额外等待三轮', async () => {
   for (const workType of ['note', 'video']) {
     const f = fixture({ workType, maxScrolls: 120,

@@ -143,6 +143,42 @@ for (const stopped of [false, true]) test((stopped ? '停止' : '采集异常') 
   assert.equal(f.state.running, false);
 });
 
+const collectExcept = (failures) => async ({ append, item, capture, index }) => {
+  if (failures[index]) throw new TaskStopError('本地隔离作品级失败', failures[index]);
+  const id = 'captured-' + index;
+  append([comment(id, { videoLink: item.url })]); capture([id], { added: 1, supplemented: 0 });
+  return { newLeads: 1, complete: true, work: item };
+};
+
+test('第2个作品无进展只记中断，第3个作品仍然采集，本次评论照常自动判断', async () => {
+  const f = fixture({ list: [work(0), work(1), work(2)], collect: collectExcept({ 1: 'COLLECTION_NO_PROGRESS' }) });
+  const result = await f.run();
+  assert.equal(result.ok, true); assert.equal(f.calls.length, 3); assert.equal(f.calls[2].item.id, IDS[2]);
+  assert.equal(result.interrupted, 1); assert.equal(result.processed, 2); assert.equal(result.completed, 2);
+  assert.equal(f.summary().status, 'completed'); assert.equal(f.summary().interrupted, 1);
+  assert.deepEqual(f.boundaries, ['collect', 'collect', 'collect'], '失败作品同样已访问，下一作品前保留间隔');
+  assert.deepEqual(new Set(f.aiCalls[0].leadIds), new Set(['captured-0', 'captured-2']));
+  assert(f.logs.some(line => line.includes('作品 2/3 未完成') && line.includes('本地隔离作品级失败')));
+});
+
+for (const code of ['LOGIN_REQUIRED', 'PLATFORM_VERIFICATION', 'PAGE_CLOSED']) test('第2个作品遇到账号/页面级错误 ' + code + ' 时整个队列停止', async () => {
+  const f = fixture({ list: [work(0), work(1), work(2)], collect: collectExcept({ 1: code }) });
+  const result = await f.run();
+  assert.equal(result.ok, false); assert.equal(f.calls.length, 2); assert.equal(f.aiCalls.length, 0);
+  assert.equal(f.summary().status, 'paused'); assert.equal(f.summary().aiStatus, 'skipped');
+  assert.equal(f.summary().newLeads, 1); assert.equal(f.state.running, false);
+});
+
+test('连续3个作品级失败后暂停队列，成功作品会重置连续计数', async () => {
+  const extra = (id) => work(0, { id, url: 'https://www.douyin.com/video/' + id });
+  const list = [work(0), work(1), work(2), extra('7693579483274183027'), extra('7693579483274183028'), extra('7693579483274183029')];
+  const f = fixture({ list, collect: collectExcept({ 0: 'COMMENT_PANEL_NOT_FOUND', 2: 'TARGET_MISMATCH', 3: 'COMMENT_RESPONSE_MISSING', 4: 'COLLECTION_NO_PROGRESS' }) });
+  const result = await f.run();
+  assert.equal(result.ok, true); assert.equal(f.calls.length, 5, '第6个作品不再打开');
+  assert.equal(f.summary().status, 'paused'); assert.equal(f.summary().interrupted, 4); assert.equal(f.summary().processed, 1);
+  assert.match(f.summary().stopReason, /连续 3 个作品采集失败/); assert.equal(f.aiCalls.length, 0);
+});
+
 test('正常返回时收到停止，不会因切换AI任务而清除停止状态', async () => {
   const f = fixture({ collect: async ({ append, item, capture, state }) => {
     append([comment('saved')]); capture(['saved'], { added: 1, supplemented: 0 }); state.stopRequested = true;
@@ -168,11 +204,54 @@ test('关闭自动AI后只保存本次评论，不隐式发起判断', async () 
   await f.run(); assert.equal(f.aiCalls.length, 0); assert.equal(f.summary().autoAi, false); assert.equal(f.summary().aiStatus, 'skipped');
 });
 
+const secondsAgo = seconds => Math.floor(Date.now() / 1000) - seconds;
+
 test('AI报告成功但跳过记录仍无当前结果时须显示暂停和真实待判断数', async () => {
-  const f = fixture({ ai: async () => ({ ok: true, partial: false, yesCount: 0, noCount: 0, failCount: 0, skipped: 1 }) });
+  const f = fixture({ ai: async () => ({ ok: true, partial: false, yesCount: 0, noCount: 0, failCount: 0, skipped: 1 }),
+    collect: async ({ append, item, capture }) => {
+      append([comment('in-window', { commentTimestamp: secondsAgo(3600), videoLink: item.url })]);
+      capture(['in-window'], { added: 1, supplemented: 0 }); return { newLeads: 1, complete: true, work: item };
+    } });
   const result = await f.run(); assert.equal(result.ok, true); assert.equal(f.summary().status, 'completed');
   assert.equal(f.summary().aiStatus, 'paused'); assert.equal(f.summary().aiPendingCount, 1); assert.equal(f.state.stage, 'ai_paused');
   assert.equal(f.rows()[0].aiDone, undefined);
+});
+
+// The AI engine itself judges only rows inside its commentDays window.
+const judgeRecentOnly = async ({ options, rows, makeCurrent }) => {
+  const recent = options.leadIds.filter(id => {
+    const row = rows().find(lead => String(lead.id) === id);
+    return row.commentTimestamp && row.commentTimestamp >= secondsAgo(options.filters.commentDays * 86400);
+  });
+  for (const id of recent) makeCurrent(id);
+  return { ok: true, partial: false, yesCount: recent.length, noCount: 0, failCount: 0, skipped: 0 };
+};
+
+test('本次10条中4条超出时间窗：AI判完窗内6条即为完成，并单列超窗数量', async () => {
+  const f = fixture({ ai: judgeRecentOnly, collect: async ({ append, item, capture }) => {
+    const ids = Array.from({ length: 10 }, (_, index) => 'windowed-' + index);
+    append(ids.map((id, index) => comment(id, { commentTimestamp: secondsAgo(index < 6 ? 3600 : 10 * 86400), videoLink: item.url })));
+    capture(ids, { added: 10, supplemented: 0 }); return { newLeads: 10, complete: true, work: item };
+  } });
+  const result = await f.run();
+  assert.equal(result.ok, true); assert.equal(f.aiCalls.length, 1); assert.deepEqual(f.aiCalls[0].filters, { f: 'all', commentDays: 7 });
+  assert.equal(f.summary().aiStatus, 'completed'); assert.equal(f.state.stage, 'review_ready');
+  assert.equal(f.summary().aiPendingCount, 0); assert.equal(f.summary().aiOutOfWindowCount, 4); assert.equal(f.summary().aiNoTimestampCount, 0);
+  assert.equal(f.summary().aiCounts.yes, 6); assert.match(f.summary().aiMessage, /超出时间窗未判断 4 条/);
+});
+
+test('缺评论时间的记录单独统计，不让窗内已判完的AI显示暂停；窗内未判完仍暂停', async () => {
+  const collect = async ({ append, item, capture }) => {
+    append([comment('timed', { commentTimestamp: secondsAgo(3600), videoLink: item.url }), comment('untimed', { videoLink: item.url })]);
+    capture(['timed', 'untimed'], { added: 2, supplemented: 0 }); return { newLeads: 2, complete: true, work: item };
+  };
+  const done = fixture({ ai: judgeRecentOnly, collect });
+  await done.run();
+  assert.equal(done.summary().aiStatus, 'completed'); assert.equal(done.summary().aiNoTimestampCount, 1);
+  assert.equal(done.summary().aiOutOfWindowCount, 0); assert.match(done.summary().aiMessage, /缺评论时间未判断 1 条/);
+  const unfinished = fixture({ ai: async () => ({ ok: true, partial: false, yesCount: 0, noCount: 0, failCount: 0, skipped: 0 }), collect });
+  await unfinished.run();
+  assert.equal(unfinished.summary().aiStatus, 'paused'); assert.equal(unfinished.summary().aiPendingCount, 1);
 });
 
 for (const thrown of [false, true]) test('AI' + (thrown ? '抛错' : '返回错误') + '保留采集成功，只暂停后续判断', async () => {

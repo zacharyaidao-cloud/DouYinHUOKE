@@ -102,6 +102,18 @@ function requireAccount(id) {
 function isAiResultCurrent(lead, version, videos) {
   return ai.isStoredResultCurrent(lead, version, videos);
 }
+// /api/state 每 2.5 秒轮询一次。线索统计只在线索/作品/设置文件变化后重算，
+// 避免任务进行中每次轮询都遍历全部线索、阻塞同进程里的浏览器自动化。
+let statsCache = null;
+function fileStamp(file) { try { const s = fs.statSync(file); return s.mtimeMs + ':' + s.size; } catch { return 'missing'; } }
+function cachedLeadStats(compute) {
+  if (!store.F) return compute(); // 内存存储（测试替身）没有文件可判定变化，不缓存
+  const key = [store.F.leads, store.F.videos, store.F.settings].map(fileStamp).join('|');
+  if (statsCache && statsCache.key === key) return statsCache.value;
+  const value = compute();
+  statsCache = { key, value };
+  return value;
+}
 async function aiAssist(session, operation) {
   const controller = new AbortController();
   const releaseSession=holdSessionForWork(session);
@@ -241,16 +253,20 @@ async function handleApi(req,res,pathname) {
   const {session,token}=auth;
   if(method==='POST'&&pathname==='/api/logout') { startupLoginScan.cancelSession(session); if(taskContext===session.authContext) engine.stopTask(); for(const [controller,context] of aiAssistRequests) if(context===session.authContext) controller.abort(); license.clearSession(session.authContext); sessions.delete(token); return json(res,{ok:true}); }
   if(method==='GET'&&pathname==='/api/state') {
-    const accounts=store.getAccounts().map(a=>({...startupLoginScan.projectAccount(a),daily:store.getDailyUsage(a.id)})); const leads=store.getLeads();
+    const accounts=store.getAccounts().map(a=>({...startupLoginScan.projectAccount(a),daily:store.getDailyUsage(a.id)}));
     const settings=store.getSettings(); const aiKeySet=!!String(settings.ai.apiKey||'').trim();
     settings.license={enabled:true};
     // API Key 不随轮询下发到渲染层；界面只需要知道“是否已保存”。
     settings.ai.apiKey=''; settings.ai.apiKeySet=aiKeySet;
     const licenseStatus={...license.status()}; delete licenseStatus.serverUrl;
     const videos=store.getVideos(); const ruleVersion=ai.getRuleSet(settings).version;
-    const currentAi=leads.filter(l=>isAiResultCurrent(l,ruleVersion,videos));
-    const stats={total:leads.length,intent:leads.filter(l=>l.intent).length,followed:leads.filter(l=>l.followedAt).length,dmSent:leads.filter(l=>l.dmCount>0).length,newCount:leads.filter(l=>!l.followedAt&&!l.dmCount&&!l.noDm&&!l.replied&&!l.doNotContact).length,aiJudged:currentAi.length,aiYes:currentAi.filter(l=>l.aiNeed==='是').length,aiNo:currentAi.filter(l=>l.aiNeed==='否').length,aiHistoricalJudged:leads.filter(l=>l.aiDone).length-currentAi.length};
-    stats.aiPending=leads.filter(l=>!l.isAuthor&&String(l.demand||'').trim()&&!isAiResultCurrent(l,ruleVersion,videos)).length;
+    const stats={...cachedLeadStats(()=>{
+      const leads=store.getLeads();
+      const currentAi=leads.filter(l=>isAiResultCurrent(l,ruleVersion,videos));
+      const value={total:leads.length,intent:leads.filter(l=>l.intent).length,followed:leads.filter(l=>l.followedAt).length,dmSent:leads.filter(l=>l.dmCount>0).length,newCount:leads.filter(l=>!l.followedAt&&!l.dmCount&&!l.noDm&&!l.replied&&!l.doNotContact).length,aiJudged:currentAi.length,aiYes:currentAi.filter(l=>l.aiNeed==='是').length,aiNo:currentAi.filter(l=>l.aiNeed==='否').length,aiHistoricalJudged:leads.filter(l=>l.aiDone).length-currentAi.length};
+      value.aiPending=leads.filter(l=>!l.isAuthor&&String(l.demand||'').trim()&&!isAiResultCurrent(l,ruleVersion,videos)).length;
+      return value;
+    })};
     const activePrompt=settings.ai.promptPresets.find(p=>p.id===settings.ai.activePromptId);
     const promptInspection=ai.inspectPromptDraft(activePrompt?.prompt||'');
     const aiPromptWarning=['DRAFT_META_INSTRUCTION','DRAFT_LEGACY_PROTOCOL','DRAFT_CONTACT_POLICY_CONFLICT'].includes(promptInspection.code)?promptInspection.message:'';
@@ -383,7 +399,7 @@ async function handleApi(req,res,pathname) {
   if(method==='POST'&&pathname==='/api/collect/start') { const b=await readBody(req); requireAccount(b.accountId); startTask(session,()=>engine.collectTask(b.accountId,b.links||b.videoUrls||b.videoUrl)); return json(res,{ok:true,started:true}); }
   if(method==='GET'&&pathname==='/api/search/results') return json(res,{ok:true,results:store.getSearchResults()});
   if(method==='POST'&&pathname==='/api/search/start') { const b=await readBody(req); requireAccount(b.accountId); startTask(session,()=>engine.searchTask(b.accountId,b)); return json(res,{ok:true,started:true}); }
-  if(method==='POST'&&pathname==='/api/search/clear') { if(engine.taskState.running) return json(res,{ok:false,error:'任务期间不能清空搜索结果'},409); store.setSearchResults([]); return json(res,{ok:true}); }
+  if(method==='POST'&&pathname==='/api/search/clear') { if(engine.taskState.running||engine.taskState.distributionActive) return json(res,{ok:false,error:'任务期间不能清空搜索结果'},409); store.setSearchResults([]); return json(res,{ok:true}); }
   if(method==='GET'&&pathname==='/api/ai/models') { return json(res,{ok:true,...await aiAssist(session,options=>ai.listModels(store.getSettings(),{...options,forceRefresh:true}))}); }
   if(parts[1]==='ai'&&method==='POST') {
     const b=await readBody(req);
@@ -397,7 +413,7 @@ async function handleApi(req,res,pathname) {
     if(parts[2]==='prompt-draft'||parts[2]==='prompt-test') { const allowed=await license.assertActionAllowed(session.authContext); if(!allowed.ok) return json(res,allowed,401); const result=await aiAssist(session,options=>parts[2]==='prompt-draft'?ai.generatePromptDraft(store.getSettings(),b.businessInput||{},options):ai.testPromptDraft(store.getSettings(),b,options)); return json(res,{ok:true,...result}); }
   }
   if(method==='GET'&&pathname==='/api/videos') return json(res,{ok:true,videos:Object.entries(store.getVideos()).map(([id,record])=>projectWork(record,id)).sort((a,b)=>String(b.lastCollectAt||b.capturedAt||'').localeCompare(String(a.lastCollectAt||a.capturedAt||'')))});
-  if(method==='DELETE'&&parts[1]==='videos'&&parts[2]) { if(engine.taskState.running) return json(res,{ok:false,error:'任务期间不能删除视频历史'},409); const v=store.getVideos(); delete v[parts[2]]; store.setVideos(v); return json(res,{ok:true}); }
+  if(method==='DELETE'&&parts[1]==='videos'&&parts[2]) { if(engine.taskState.running||engine.taskState.distributionActive) return json(res,{ok:false,error:'任务期间不能删除视频历史'},409); const v=store.getVideos(); delete v[parts[2]]; store.setVideos(v); return json(res,{ok:true}); }
   if(method==='GET'&&parts[1]==='logs') return json(res,{ok:true,lines:store.tailLog(parts[2],100)});
   if(method==='GET'&&pathname==='/api/export') {
     // GET 默认导出全部，避免“没有筛选条件却少导数据”；需要筛选时显式传 scope=filters。

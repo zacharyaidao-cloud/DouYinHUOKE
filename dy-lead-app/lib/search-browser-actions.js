@@ -30,10 +30,26 @@ function clickSearchButton() {
   return false;
 }
 
+/**
+ * 点击搜索结果页的范围页签（视频 / 图文）。只在结果区的页签里找，
+ * 排除顶部导航与侧栏，避免点到同名的全站入口。返回是否点击及命中方式。
+ */
 function clickSearchTab(label) {
-  const els = Array.from(document.querySelectorAll('div,span,a')).filter(e => (e.textContent || '').trim() === label && e.offsetParent !== null);
-  if (els[0]) els[0].click();
-  return !!els[0];
+  const visible = e => e && e.offsetParent !== null && e.getClientRects().length > 0;
+  const outsideNav = e => !e.closest('header,nav,aside,[role="navigation"],[role="banner"]');
+  const exact = e => (e.textContent || '').replace(/\s+/g, '').trim() === label;
+  const roleTabs = Array.from(document.querySelectorAll('[role="tab"]')).filter(e => visible(e) && outsideNav(e) && exact(e));
+  if (roleTabs.length === 1) {
+    if (roleTabs[0].getAttribute('aria-selected') === 'true') return { clicked: false, already: true, method: 'role-tab' };
+    roleTabs[0].click();
+    return { clicked: true, method: 'role-tab' };
+  }
+  const candidates = Array.from(document.querySelectorAll('div,span,a')).filter(e => visible(e) && outsideNav(e) && exact(e)
+    && !Array.from(e.children).some(child => exact(child)));
+  if (!candidates.length) return { clicked: false, method: 'none' };
+  candidates.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  candidates[0].click();
+  return { clicked: true, method: 'text', count: candidates.length };
 }
 
 /**

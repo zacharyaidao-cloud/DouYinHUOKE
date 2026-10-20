@@ -31,19 +31,32 @@ function ensureDirs() {
 }
 ensureDirs();
 
+// 解析结果缓存：以文件 mtime + size 判定是否变化（外部改写文件也会自动失效）。
+// 调用方会修改返回值再 set 回去，所以每次返回深拷贝，缓存本体只读。
+// 线索上万条时，触达流程每个用户要读几十次 leads.json，缓存省掉重复的磁盘读取与解析。
+const parsedCache = new Map();
 function readJson(file, fallback) {
   try {
+    const stat = fs.statSync(file);
+    const cached = parsedCache.get(file);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return structuredClone(cached.value);
     const raw = fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, '');
-    return JSON.parse(raw);
+    const value = JSON.parse(raw);
+    parsedCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+    return structuredClone(value);
   } catch (e) {
+    parsedCache.delete(file);
     if (e.code === 'ENOENT') return fallback;
     throw new Error('数据文件读取失败，请保留原文件并从备份恢复：' + path.basename(file));
   }
 }
 
+// 大数据文件（线索、作品）用紧凑格式写入，体积约小三分之一；配置类文件保留缩进便于人工查看。
+function compactFile(file) { return file === F.leads || file === F.videos || file === F.searchResults; }
 function writeJson(file, obj) {
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf-8');
+  parsedCache.delete(file);
+  fs.writeFileSync(tmp, compactFile(file) ? JSON.stringify(obj) : JSON.stringify(obj, null, 2), 'utf-8');
   if (fs.existsSync(file)) fs.copyFileSync(file, file + '.bak');
   fs.renameSync(tmp, file);
 }

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const workflow = require('./workflow');
 const { TaskStopError } = require('./scheduler');
+const { levelOf } = require('./lib/error-levels');
 const browserActions = require('./lib/browser-actions');
 const defaultBrowserActionAdapter = require('./lib/outreach-browser');
 const { navigateCollectionPage: defaultNavigateProfilePage } = require('./lib/collection-browser');
@@ -32,7 +33,8 @@ function createActions(deps) {
   const navigateProfilePage = deps.navigateProfilePage || defaultNavigateProfilePage;
   const observeDmHistory = deps.observeDmHistory || defaultObserveDmHistory;
   const observeProfileRelation = deps.observeProfileRelation || defaultObserveProfileRelation;
-  const stopClassError = error => error instanceof TaskStopError || !/^(?:PAGE_CLOSED$|PAGE_REDIRECT$|TARGET_|SESSION_|AUTH_|LOGIN_|PLATFORM_|TASK_STOPPED$|DM_RECIPIENT_MISMATCH$|DM_RECIPIENT_UNCONFIRMED$|DM_PREVIOUS_CONVERSATION_UNCONFIRMED$|DM_COMPOSER_CHANGED$)/.test(error && error.code || '')
+  // 任务级/账号级错误升级为停止；用户级（含接收人未确认、会话/输入框变化）只记本用户失败，继续下一位
+  const stopClassError = error => error instanceof TaskStopError || levelOf(error) === 'item'
     ? error : new TaskStopError(error.message, error.code);
   const latest = id => store.getLeads().find(l => String(l.id) === String(id));
   const can = (lead, kind, settings, accountId) => workflow.eligibility(latest(lead.id), kind, store.getLeads(), settings, Date.now(), store.getVideos(), accountId ? { accountId } : undefined);
@@ -56,6 +58,22 @@ function createActions(deps) {
     if (workflow.settingsFingerprint(settings, plan.actions) !== plan.fingerprint) throw new TaskStopError('业务判断规则或话术已改变，已暂停，请重新预检查', 'PLAN_CHANGED');
     return settings;
   }
+  // 私信强制休息（每成功 N 条休息一次）的计数与截止时间按账号存进 dm-account-state，
+  // 多账号分发每批新建调度器、或重新启动任务后都接着算；跨运营日计数清零。
+  function loadDmSession(accountId) {
+    if (typeof store.getDmAccountState !== 'function') return null;
+    const entry = (store.getDmAccountState() || {})[String(accountId)];
+    const saved = entry && entry.dmSession;
+    if (!saved || typeof saved !== 'object') return null;
+    const today = typeof store.opDayStr === 'function' ? store.opDayStr() : '';
+    return saved.opDay === today ? saved : { count: 0, pauseUntil: saved.pauseUntil };
+  }
+  function saveDmSession(accountId, scheduler) {
+    if (typeof store.getDmAccountState !== 'function' || typeof store.setDmAccountState !== 'function' || typeof scheduler.dmSessionState !== 'function') return;
+    const state = store.getDmAccountState() || {}, id = String(accountId);
+    state[id] = { ...(state[id] || {}), dmSession: { ...scheduler.dmSessionState(), opDay: typeof store.opDayStr === 'function' ? store.opDayStr() : '' } };
+    store.setDmAccountState(state);
+  }
   function progress(accountId, lead, message, stage) {
     const name = String(lead && lead.nickname || '当前用户');
     setTask({ status: `${name}：${message}`, currentLead: { id: String(lead && lead.id || ''), nickname: name }, ...(stage ? { stage } : {}) });
@@ -76,6 +94,7 @@ function createActions(deps) {
       DM_ENTRY_AMBIGUOUS: '主页存在多个候选私信入口，无法唯一确认目标',
       DM_ENTRY_CHANGED: '目标私信入口在点击前已重绘或改变，未执行入口点击',
       DM_ENTRY_UNAVAILABLE: '目标私信入口当前不可操作，未执行入口点击',
+      DM_ENTRY_CLICK_BLOCKED: '私信入口被页面浮层遮挡或点击超时，未打开会话',
       DM_MESSAGE_LIST_ONLY: '目前仅显示消息列表，尚未打开名单用户的会话',
       DM_TARGET_CHAT_NOT_READY: '已打开消息界面，但名单用户的目标会话尚未就绪',
       DM_RECIPIENT_UNCONFIRMED: '尚未取得一致的主页与当前聊天昵称，不能确认会话接收人身份',
@@ -99,6 +118,8 @@ function createActions(deps) {
       if (Number.isInteger(diagnostic[key]) && diagnostic[key] >= 0) counts[key] = diagnostic[key];
     }
     if (['explicit_uid', 'dom_profile_name'].includes(diagnostic.recipientEvidence)) counts.recipientEvidence = diagnostic.recipientEvidence;
+    // 入口点击被遮挡时的遮挡元素（适配器只给 "tag|class前60字符|data-e2e"，不含用户文本），截断后写日志便于定位浮层
+    if (typeof diagnostic.entryBlocker === 'string') counts.entryBlocker = diagnostic.entryBlocker.slice(0, 120);
     if (['explicit_uid', 'dom_profile_name', 'unconfirmed'].includes(diagnostic.conversationRowEvidence)) counts.conversationRowEvidence = diagnostic.conversationRowEvidence;
     if ([0, 1].includes(diagnostic.profileIdentityChanged)) counts.profileIdentityChanged = diagnostic.profileIdentityChanged;
     for (const key of ['chatNameMatches', 'chatAvatarMatches']) if ([0, 1].includes(diagnostic[key])) counts[key] = diagnostic[key];
@@ -500,7 +521,7 @@ function createActions(deps) {
         }
         result = saveDmResult(lead, result, settings, activeAttemptId);
         scheduler.checkStopped();
-        if (result.state === 'confirmed_success' && typeof scheduler.afterDmSent === 'function') scheduler.afterDmSent();
+        if (result.state === 'confirmed_success' && typeof scheduler.afterDmSent === 'function') { scheduler.afterDmSent(); saveDmSession(accountId, scheduler); }
         store.log(accountId, `私信结果：${lead.nickname} → ${result.state}（${result.reason || '已确认'}）`);
         progress(accountId, lead, result.alreadySettled ? `私信保留已有核验结果：${result.state === 'confirmed_success' ? '成功' : '失败'}`
           : result.state === 'confirmed_success' ? '平台已确认接受本次私信' : result.state === 'pending_verification' ? '私信已点击，回执尚未确认，禁止自动重发' : `私信确认失败：${result.reason}`);
@@ -546,11 +567,12 @@ function createActions(deps) {
     const doneIds = [], result = { ok: true, followCount: 0, dmCount: 0, pendingCount: 0, failedCount: 0, skipped: 0 };
     const outcomeCounts = () => ({ followCount: result.followCount, dmCount: result.dmCount,
       pendingCount: result.pendingCount, failedCount: result.failedCount, skipped: result.skipped });
-    let userErrors = 0;
+    let userErrors = 0, pausedLeadId = '';
     checkpoint({ id: crypto.randomUUID(), kind, accountId: String(accountId), planId: plan.id, leadIds: [...plan.leadIds],
       counts: outcomeCounts(), processedLeadIds: [], currentLeadId: null, state: 'running', stopReason: '' });
     try {
       const scheduler = makeScheduler(store.getSettings(), { errorBoundary: 'user' });
+      if (typeof scheduler.restoreDmSession === 'function') scheduler.restoreDmSession(loadDmSession(accountId));
       setTask({ status: '正在打开该账号的可见浏览器窗口' });
       const alive = await launchAccount(accountId, { headless: false, checkStopped: () => scheduler.checkStopped() });
       const { page } = alive;
@@ -619,6 +641,7 @@ function createActions(deps) {
             else result.skipped++;
             if (r.anomaly) { anomaly = true; lastAnomalyReason = r.reason || '私信操作异常'; }
             if (r.pauseCode) {
+              pausedLeadId = String(leadId);
               doneIds.push(String(leadId));
               checkpoint({ counts: outcomeCounts(), processedLeadIds: [...doneIds], currentLeadId: null });
               setTask({ done: doneIds.length, stage: 'user_done' });
@@ -656,6 +679,10 @@ function createActions(deps) {
       setTask({ running: false, status: `任务已暂停：${e.message}` });
     }
     result.count = kind === 'follow' ? result.followCount : result.dmCount;
+    // 供多账号分发判断哪些用户已处理：触发账号级频繁/上限的那位用户本次并未完成，
+    // 不算已处理（由分发回池交给其他账号；若已不可再发，执行时由资格检查跳过）。
+    result.processedLeadIds = doneIds.filter(id => id !== pausedLeadId);
+    if (pausedLeadId) result.pausedLeadId = pausedLeadId;
     return result;
   }
   async function openLeadProfile(accountId, leadId) {

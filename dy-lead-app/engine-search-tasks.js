@@ -17,24 +17,32 @@ function normalizeSearchInput(input, settings) {
   return { keywords, workType, maxPages, minCommentCount };
 }
 
-function searchUrl(keyword, workType) {
-  const type = workType === 'note' ? '?type=note' : workType === 'video' ? '?type=video' : '';
-  return `https://www.douyin.com/search/${encodeURIComponent(keyword)}${type}`;
+// 有界轮询：条件满足立即返回，超时返回最后一次结果（不抛错）。
+async function waitFor(check, { timeoutMs, intervalMs = 250, scheduler }) {
+  const until = Date.now() + timeoutMs;
+  let value = await check();
+  while (!value && Date.now() < until) {
+    if (scheduler) scheduler.checkStopped();
+    await sleep(intervalMs);
+    value = await check();
+  }
+  return value;
 }
 
 /**
  * 搜索框真人式进入搜索页：打开首页 → 点搜索框 → 逐字输入 → 回车 → 按范围点页签。
  * 页面函数在 lib/search-browser-actions.js（不参与混淆，序列化后自包含）。
+ * onBeforeTab：点页签前回调，用于清空“综合”页已收到的结果，避免混入。
+ * 返回 { tabVerified }：范围页签是否确认切换（综合模式恒为 true）。
  */
-async function navigateSearch(page, keyword, workType, scheduler) {
+async function navigateSearch(page, keyword, workType, scheduler, { onBeforeTab = () => {} } = {}) {
   const browserSearch = require('./lib/search-browser-actions');
   await page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await sleep(2500);
-  let box = await page.evaluate(browserSearch.findSearchInputRect).catch(() => null);
+  const findBox = () => page.evaluate(browserSearch.findSearchInputRect).catch(() => null);
+  let box = await waitFor(findBox, { timeoutMs: 6000, scheduler });
   if (!box) {
     await page.evaluate(browserSearch.openSearchEntry).catch(() => {});
-    await sleep(1200);
-    box = await page.evaluate(browserSearch.findSearchInputRect).catch(() => null);
+    box = await waitFor(findBox, { timeoutMs: 3000, scheduler });
   }
   if (!box) throw new Error('首页搜索框不可用，本次未执行搜索');
   await page.mouse.click(box.x, box.y);
@@ -57,12 +65,19 @@ async function navigateSearch(page, keyword, workType, scheduler) {
     }
   }
   if (!/\/search\//.test(page.url())) throw new Error('搜索后未进入结果页，本次未执行搜索');
-  // 视频/图文范围：点击对应页签（综合默认不动）
-  if (workType === 'video' || workType === 'note') {
-    const tabLabel = workType === 'video' ? '视频' : '图文';
-    await page.evaluate(browserSearch.clickSearchTab, tabLabel).catch(() => {});
-    await sleep(2000);
-  }
+  // 视频/图文范围：点击对应页签（综合默认不动），并确认已切换
+  if (workType !== 'video' && workType !== 'note') return { tabVerified: true };
+  const tabLabel = workType === 'video' ? '视频' : '图文';
+  const typeInUrl = () => new URL(page.url()).searchParams.get('type') === workType;
+  if (typeInUrl()) return { tabVerified: true };
+  // 页签区随结果渲染出现，给它几秒
+  await waitFor(() => page.evaluate(label => Array.from(document.querySelectorAll('[role="tab"],div,span,a'))
+    .some(e => e.offsetParent !== null && (e.textContent || '').replace(/\s+/g, '') === label), tabLabel).catch(() => false), { timeoutMs: 5000, scheduler });
+  onBeforeTab();
+  const result = await page.evaluate(browserSearch.clickSearchTab, tabLabel).catch(() => null);
+  if (result && result.already) return { tabVerified: true };
+  const verified = await waitFor(typeInUrl, { timeoutMs: 6000, scheduler });
+  return { tabVerified: !!verified, tabMethod: result && result.method || 'error' };
 }
 
 /** 关键词搜索找作品：只被动读取搜索页自己的带签名接口响应，不构造任何平台请求。 */
@@ -121,8 +136,11 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
           try {
             await scheduler.prepare({ accountId, kind: 'ui', uid: '' }, async () => {
               scheduler.checkStopped();
-              await navigateSearch(page, keyword, opts.workType, scheduler);
-              store.log(accountId, `关键词搜索：${keyword} 已通过首页搜索框进入结果页`);
+              const nav = await navigateSearch(page, keyword, opts.workType, scheduler, {
+                // 切页签前清空“综合”页已到的结果，只保留目标范围的响应
+                onBeforeTab: () => { worksBuffer.length = 0; hasMore = false; }
+              });
+              store.log(accountId, `关键词搜索：${keyword} 已通过首页搜索框进入结果页` + (nav.tabVerified ? '' : `；范围页签未确认切换（${nav.tabMethod}），入库时按作品类型过滤`));
             });
           } catch (error) {
             if (error instanceof TaskStopError) throw error;
@@ -180,6 +198,7 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
             continue;
           }
           // 自然滚动触发分页，拦截每页响应；每页实时更新界面进度
+          let idlePages = 0;
           for (let p = 1; p <= opts.maxPages; p++) {
             scheduler.checkStopped();
             await scheduler.before({ accountId, kind: 'scroll', operation: 'search_scroll', uid: '' });
@@ -197,11 +216,20 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
             setTask({ stage: 'searching', status: `正在搜索「${keyword}」第 ${p}/${opts.maxPages} 页，已读 ${worksBuffer.length} 个作品`,
               detail: `累计新增 ${summary.works + worksBuffer.filter(w => Number(w.commentCount) >= opts.minCommentCount).length} 个待存作品（保存前去重）`, done: keywordIndex, total: opts.keywords.length });
             if (!progressed && !hasMore && worksBuffer.length === before) break;
-            if (!progressed && before > 0 && p >= 2) break; // 连续翻页无新响应时停止，避免空转
+            // 单页偶尔慢不代表到底：连续 2 页都没有新响应才停止，避免空转
+            idlePages = progressed ? 0 : idlePages + 1;
+            if (idlePages >= 2 && before > 0) break;
           }
           await checkPageHealth(page, accountId, '');
           scheduler.checkStopped();
-          const filtered = worksBuffer.filter(work => Number(work.commentCount) >= opts.minCommentCount);
+          const seenIds = new Set();
+          const filtered = worksBuffer.filter(work => {
+            if (seenIds.has(work.awemeId)) return false;
+            seenIds.add(work.awemeId);
+            // 视频/图文范围只保留同类型作品（页签未确认切换时兜底）
+            if ((opts.workType === 'video' || opts.workType === 'note') && work.workType !== opts.workType) return false;
+            return Number(work.commentCount) >= opts.minCommentCount;
+          });
           const added = store.addSearchResults(keyword, opts.workType, filtered);
           summary.works += added;
           keywordIndex++;

@@ -1,0 +1,15 @@
+{
+  "accountId": "软件里该账号的账号ID",
+  "keyword": "要搜索的关键词",
+  "workType": "video",
+  "works": 2,
+  "commentPages": 2,
+  "follow": true,
+  "dm": true,
+  "message": "你好，这是一条测试消息",
+  "testUser": {
+    "homepage": "https://www.douyin.com/user/测试用户的sec_uid",
+    "uid": "",
+    "UID": ""
+  }
+}

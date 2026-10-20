@@ -230,6 +230,33 @@ function parseHistoryRequest(value, options = {}) {
   } catch (_) { return null; }
 }
 
+// Target-independent identity of a page history request: which conversation the
+// page itself asked for. Used only to tell "the opened chat's own history" from
+// requests for other conversations; it never establishes history by itself.
+// cmd301 carries the 1:1 conversation id "0:1:<uidA>:<uidB>" (both participants'
+// numeric UIDs). cmd1002 carries only the conversation short id. No sec_uid
+// appears in either request.
+function parseHistoryConversation(value) {
+  try {
+    const bytes = inputBytes(value);
+    if (!bytes) return null;
+    const budget = { count: 0 }, envelope = fields(bytes, requestSchema, budget);
+    const command = envelope.get(1);
+    if (![301n, 1002n].includes(command) || !positive(envelope.get(2))) return null;
+    const bodyField = command === 301n ? 301 : 1001;
+    const body = nested(envelope, 8, { [bodyField]: 'b' }, budget, 1);
+    const query = body && nested(body, bodyField, command === 301n ? { 1: 's', 3: 'v' } : { 1: 'v' }, budget, 2);
+    if (!query) return null;
+    const shortId = query.get(command === 301n ? 3 : 1);
+    if (!positive(shortId)) return null;
+    if (command === 1002n) return { command: 1002, conversationId: '', participants: null, conversationShortId: shortId.toString() };
+    const conversationId = query.get(1);
+    const match = typeof conversationId === 'string' && /^0:1:([1-9]\d{0,18}):([1-9]\d{0,18})$/.exec(conversationId);
+    if (!match || !uid(match[1]) || !uid(match[2]) || BigInt(match[1]) >= BigInt(match[2])) return null;
+    return { command: 301, conversationId, participants: [match[1], match[2]], conversationShortId: shortId.toString() };
+  } catch (_) { return null; }
+}
+
 function parseHistoryResponse(value, record) {
   try {
     const bytes = inputBytes(value, MAX_HISTORY_BYTES);
@@ -286,4 +313,4 @@ function parseHistoryResponse(value, record) {
   } catch (_) { return null; }
 }
 
-module.exports = { parseSendRequest, parseSendResponse, parseHistoryRequest, parseHistoryResponse, MAX_BYTES, MAX_HISTORY_BYTES };
+module.exports = { parseSendRequest, parseSendResponse, parseHistoryRequest, parseHistoryConversation, parseHistoryResponse, MAX_BYTES, MAX_HISTORY_BYTES };

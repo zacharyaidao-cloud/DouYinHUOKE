@@ -2,7 +2,7 @@
 
 // Observe only the browser's own history request/response pairs. There is no
 // fetch/replay/cursor driving here and no payload or participant ID is logged.
-const { parseHistoryRequest, parseHistoryResponse, MAX_BYTES, MAX_HISTORY_BYTES } = require('./dm-protocol');
+const { parseHistoryRequest, parseHistoryConversation, parseHistoryResponse, MAX_BYTES, MAX_HISTORY_BYTES } = require('./dm-protocol');
 const PATHS = new Map([[301, '/v1/message/get_by_conversation'], [1002, '/v1/stranger/get_messages']]);
 // Lifetime spans UI readiness; wait() controls a separate short response wait.
 // This is not an action delay and a confirmed historical result releases early.
@@ -30,8 +30,23 @@ function createDmHistoryObserver({ page, targetNumericUid, selfNumericUid, signa
   let active = true, armedAt = null, requests = new WeakMap(), seen = 0, recognizedRequests = 0, decodedResponses = 0;
   let observedPages = 0, observedMessages = 0, outgoingTextCount = 0, hasMore = null;
   let result = unknown('尚未取得当前目标的可确认历史响应'), waiting = null, settle = null, armTimer = null;
+  // Recipient attribution of every history request the page made in this
+  // window. "target" needs a valid response; any request for another
+  // conversation, or one that cannot be attributed, voids protocol evidence.
+  const recipient = { targetRequests: 0, targetResponses: 0, foreignRequests: 0, unattributedRequests: 0, overflow: false };
+  const targetShortIds = new Set(), target = /^[1-9]\d{0,18}$/.test(String(targetNumericUid || '')) ? String(targetNumericUid) : '';
   const within = () => active && armedAt !== null && !(signal && signal.aborted) && now() >= armedAt && now() - armedAt <= MAX_WINDOW_MS;
   const snapshot = () => ({ ...result });
+  const recipientEvidence = () => {
+    const counts = { ...recipient };
+    if (recipient.overflow || recipient.foreignRequests || recipient.unattributedRequests) {
+      return { state: 'conflict', reason: '本窗口内网页还请求了其他或无法归属的会话历史，不能用协议确认接收人', ...counts };
+    }
+    if (recipient.targetResponses) {
+      return { state: 'confirmed', reason: '网页自身的会话历史请求与响应只指向目标数字UID的单聊会话', evidence: 'im-protobuf-history:conversation-participants-include-target;no-other-conversation-in-window', ...counts };
+    }
+    return { state: 'none', reason: target ? '本窗口内尚未取得目标会话的历史请求与响应' : '目标数字UID未知，无法做协议核验', ...counts };
+  };
   function dispose() {
     if (!active) return;
     active = false; requests = new WeakMap(); clearTimeout(armTimer);
@@ -40,17 +55,36 @@ function createDmHistoryObserver({ page, targetNumericUid, selfNumericUid, signa
     if (settle) settle();
   }
   const onRequest = request => {
+    let url;
     try {
-      if (!within() || seen >= MAX_REQUESTS || requests.has(request) || request.method() !== 'POST' || !ownPage(request, page) || !binaryType(request)) return;
-      const url = address(request.url()); if (!url) return;
-      seen++;
+      if (!within() || requests.has(request) || request.method() !== 'POST' || !ownPage(request, page) || !binaryType(request)) return;
+      url = address(request.url());
+    } catch (_) { return; }
+    if (!url) return;
+    // Requests past the cap are unseen; they could be for another chat.
+    if (seen >= MAX_REQUESTS) { recipient.overflow = true; return; }
+    seen++;
+    let attribution = 'unattributed';
+    try {
       const bytes = request.postDataBuffer();
       if (!Buffer.isBuffer(bytes) || bytes.length > MAX_BYTES) return;
+      const conversation = parseHistoryConversation(bytes);
+      if (target && conversation && [PATHS.get(conversation.command), PATHS.get(conversation.command) + '/'].includes(url.pathname)) {
+        if (conversation.command === 301) {
+          attribution = conversation.participants.includes(target) ? 'target' : 'foreign';
+          if (attribution === 'target') targetShortIds.add(conversation.conversationShortId);
+        } else if (targetShortIds.has(conversation.conversationShortId)) attribution = 'target';
+        // Otherwise a cmd1002 short id stays unattributed until its response
+        // proves the target conversation (see onResponse).
+      }
       const options = { targetNumericUid, ...(selfNumericUid === undefined ? {} : { selfNumericUid }) };
       const record = parseHistoryRequest(bytes, options);
       if (!record || ![PATHS.get(record.command), PATHS.get(record.command) + '/'].includes(url.pathname)) return;
-      requests.set(request, { record, address: url.href }); recognizedRequests++;
+      requests.set(request, { record, address: url.href, attribution }); recognizedRequests++;
     } catch (_) { /* Unknown request schema is not no-history evidence. */ }
+    finally {
+      recipient[attribution === 'target' ? 'targetRequests' : attribution === 'foreign' ? 'foreignRequests' : 'unattributedRequests']++;
+    }
   };
   const onResponse = response => {
     let pair;
@@ -69,6 +103,13 @@ function createDmHistoryObserver({ page, targetNumericUid, selfNumericUid, signa
       if (!within() || !Buffer.isBuffer(bytes) || bytes.length > MAX_HISTORY_BYTES) return;
       decodedResponses++;
       const parsed = parseHistoryResponse(bytes, pair.record); if (!parsed) return;
+      // Every parsed message was checked against the target conversation's
+      // participants; an empty page proves nothing about its recipient.
+      if (pair.attribution === 'target') recipient.targetResponses++;
+      else if (pair.attribution === 'unattributed' && parsed.observedMessages > 0) {
+        recipient.unattributedRequests--; recipient.targetRequests++; recipient.targetResponses++;
+        targetShortIds.add(pair.record.conversationShortId);
+      }
       observedPages++; observedMessages += parsed.observedMessages; outgoingTextCount += parsed.outgoingTextCount;
       hasMore = parsed.hasMore;
       // A later empty or unrelated page can never erase positive history.
@@ -89,6 +130,8 @@ function createDmHistoryObserver({ page, targetNumericUid, selfNumericUid, signa
     getOutcome: snapshot,
     getSnapshot: snapshot,
     getSummary: () => ({ recognizedRequests, decodedResponses, observedPages, observedMessages, outgoingTextCount, hasMore, completeHistoryProven: result.complete === true }),
+    // Frozen at dispose(): requests after the pre-send freeze are never counted.
+    getRecipientEvidence: recipientEvidence,
     wait({ timeoutMs = 5000, keepAlive = false } = {}) {
       if (waiting) return waiting;
       if (['already_sent', 'no_outbound'].includes(result.state) || !active || armedAt === null) {

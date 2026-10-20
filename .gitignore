@@ -95,5 +95,9 @@ license-admin-web/网页管理上线验收-*.json
 
 # 本地验证脚本的输出
 build-tools/outreach-browser-source*-verification.json
+# 实网冒烟：使用者自填的配置（含测试账号）与报告不入库；示例配置入库
+build-tools/smoke-real.config.json
+build-tools/smoke-real-report.json
+!build-tools/smoke-real.config.example.json
 dy-lead-app/node_modules/
 node_modules/

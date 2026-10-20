@@ -186,11 +186,11 @@ const dictionary = {
         messageListTiming: '沿用有限时就绪检查，目标界面就绪立即继续；不新增额外固定间隔',
         recipient: '所有新建和复用输入框先核对完整昵称：完成目标主页入口原生点击后，比较主页h1与唯一可见StackLayout活动聊天标题；只比较昵称，不核对头像或聊天UID。填写前和发送前重新核对昵称、绑定元素及消息全文；昵称不一致或缺失保持未发送',
         emojiName: '主页Twemoji图片按资源码点核对alt后还原，与聊天文字表情按完整顺序比较；支持纯表情和组合表情，保留连接符及肤色修饰，不删除表情后模糊匹配。缺少alt或未知图片不能退化为剩余文字匹配；读取完整DOM昵称，不受视觉省略号影响',
-        recipientEvidence: { explicit_uid: '其他旧式页面结构的既有明确ID依据；当前StackLayout流程不使用', dom_profile_name: '目标主页与当前活动聊天顶部完整昵称一致；不核对头像或聊天UID，不等同于平台UID认证' },
+        recipientEvidence: { protocol: '优先依据：会话打开后网页自身的IM历史请求（cmd301会话串含双方数字UID）与响应只指向目标数字UID的单聊会话，且窗口内没有其他或无法归属的会话请求；输入框须在唯一活动聊天层、主页未变化、可读的聊天头昵称不与主页矛盾；打开前已存在的输入框仍需昵称一致', explicit_uid: '其他旧式页面结构的既有明确ID依据；当前StackLayout流程不使用', dom_profile_name: '目标主页与当前活动聊天顶部完整昵称一致；不核对头像或聊天UID，不等同于平台UID认证' },
         authorization: '入口、目标会话行、填写、关注和发送前重新检查授权与停止；回调不重跑已写待核验动作的资格判断，不增加动作次数',
         diagnostics: ['DM_ENTRY_NOT_FOUND', 'DM_ENTRY_AMBIGUOUS', 'DM_ENTRY_CHANGED', 'DM_ENTRY_UNAVAILABLE', 'DM_MESSAGE_LIST_ONLY', 'DM_TARGET_CHAT_NOT_READY', 'DM_RECIPIENT_UNCONFIRMED'],
         notSent: '入口、会话或发送控件准备失败记本次未发送；不增加私信尝试和成功次数，不推断永久禁发，也不覆盖已确认关注',
-        privacy: '界面诊断仅记录入口/会话/发送阶段、白名单错误码、控件计数及explicit_uid或dom_profile_name依据类型，不记录实际昵称、UID、头像地址、页面全文、私信正文、选择器或凭据',
+        privacy: '界面诊断仅记录入口/会话/发送阶段、白名单错误码、控件计数、protocol/explicit_uid/dom_profile_name依据类型及协议核验状态（confirmed/conflict/none），不记录实际昵称、UID、头像地址、页面全文、私信正文、选择器或凭据',
         manualSend: '用户在浏览器自行发送的文字，能从本次可读网页历史确认时参与防重；明确已有私信按冻结重复规则跳过或继续，不把历史消息伪造成本次软件发送成功',
         validation: '隔离测试复现旧头像路径误暂停、无头像、表情、重复昵称和会话切换；不代表本次发布已完成真实账号发送或生产安装验收'
       },

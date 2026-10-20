@@ -273,4 +273,5 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
   }
   return { searchTask };
 }
-module.exports = { createSearchTasks, normalizeSearchInput };
+// navigateSearch 也供 build-tools/smoke-real.js 实网冒烟复用同一段搜索动作。
+module.exports = { createSearchTasks, normalizeSearchInput, navigateSearch };

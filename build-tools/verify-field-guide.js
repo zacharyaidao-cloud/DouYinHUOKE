@@ -113,7 +113,7 @@ assert.match(dictionary.workflow.outreach.entryFlow.recipient,/所有新建和�
 assert.match(dictionary.workflow.outreach.entryFlow.profileIdentityFix,/user-info内部.*遗漏.*内部按钮.*兄弟组/);
 assert.match(dictionary.workflow.outreach.entryFlow.nameReadiness,/不读取或等待头像.*不要求聊天UID.*就绪立即继续/);
 assert.match(dictionary.workflow.outreach.entryFlow.evidenceBoundary,/收件人身份未知.*未发送.*历史未知.*不同/);
-assert.deepEqual(Object.keys(dictionary.workflow.outreach.entryFlow.recipientEvidence), ['explicit_uid', 'dom_profile_name']);
+assert.deepEqual(Object.keys(dictionary.workflow.outreach.entryFlow.recipientEvidence), ['protocol', 'explicit_uid', 'dom_profile_name']);
 assert.match(dictionary.workflow.outreach.entryFlow.recipientEvidence.dom_profile_name,/完整昵称一致.*不核对头像或聊天UID.*不等同于平台UID认证/);
 assert.match(dictionary.workflow.outreach.entryFlow.recipient,/所有新建和复用输入框.*完整昵称.*只比较昵称，不核对头像或聊天UID.*保持未发送/);
 assert.match(dictionary.workflow.outreach.entryFlow.privacy,/explicit_uid或dom_profile_name.*不记录实际昵称、UID、头像地址/);

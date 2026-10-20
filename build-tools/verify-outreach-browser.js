@@ -346,6 +346,70 @@ function stackPageHtml({ chatName = '承恩勇闯亚马逊', profileName = '承�
       assert.equal(adapter.getDiagnostic(page).targetConversationRowCount, 2);
       assert.deepEqual([(await actions(page)).select, (await actions(page)).decoy, (await actions(page)).send], [0, 0, 0]);
     });
+    // Protocol recipient evidence: the source stands in for dm-history-observer's
+    // getRecipientEvidence (unit-tested in tests/dm-recipient-protocol.test.js).
+    const confirmedProtocol = { recipientProtocol: () => ({ state: 'confirmed' }) };
+    const dropChatTitle = page => page.locator('#qa-active-chat .StackLayoutStackChatHeadertitle').evaluate(node => node.remove());
+    await test('Protocol identity: confirmed history traffic confirms a chat whose header name is unreadable and sends natively', async () => {
+      const page = await fixture({ stack: true });
+      await dropChatTitle(page);
+      assert.equal(await adapter.openDirectMessage(page, lead, confirmedProtocol), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead, confirmedProtocol), true, JSON.stringify(adapter.getDiagnostic(page)));
+      assert.equal(adapter.getDiagnostic(page).recipientEvidence, 'protocol');
+      assert.equal(adapter.getDiagnostic(page).recipientProtocol, 'confirmed');
+      assert.equal(await adapter.fillDirectMessage(page, lead, MESSAGE, confirmedProtocol), true);
+      // click() re-verifies without options: the source stored at entry time still applies.
+      const send = await adapter.prepareSend(page, lead, MESSAGE, confirmedProtocol); assert.equal(send.state, 'ready'); await send.click();
+      const result = await actions(page);
+      assert.deepEqual([result.open, result.send, result.decoy], [1, 1, 0]);
+      assert(result.trustedInput && result.trustedSend);
+    });
+    await test('Protocol identity: without confirmed traffic the same unreadable header stays unconfirmed', async () => {
+      for (const options of [{}, { recipientProtocol: () => ({ state: 'conflict' }) }, { recipientProtocol: () => ({ state: 'none' }) }, { recipientProtocol: () => { throw new Error('x'); } }]) {
+        const page = await fixture({ stack: true });
+        await dropChatTitle(page);
+        assert.equal(await adapter.openDirectMessage(page, lead, options), true);
+        assert.equal(await adapter.ensureDirectMessageConversation(page, lead, options), false);
+        assert.equal(adapter.getDiagnostic(page).code, 'DM_RECIPIENT_UNCONFIRMED');
+        assert.equal((await actions(page)).trustedInput, false);
+      }
+    });
+    await test('Protocol identity: a readable different chat name blocks protocol evidence', async () => {
+      const page = await fixture({ stack: true, chatName: '别人的聊天' });
+      assert.equal(await adapter.openDirectMessage(page, lead, confirmedProtocol), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead, confirmedProtocol), false);
+      assert.deepEqual([(await actions(page)).send, (await actions(page)).trustedInput], [0, false]);
+    });
+    await test('Protocol identity: conflicting traffic falls back to the nickname comparison', async () => {
+      const page = await fixture({ stack: true });
+      const conflict = { recipientProtocol: () => ({ state: 'conflict' }) };
+      assert.equal(await adapter.openDirectMessage(page, lead, conflict), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead, conflict), true);
+      assert.equal(adapter.getDiagnostic(page).recipientEvidence, 'dom_profile_name');
+      assert.equal(adapter.getDiagnostic(page).recipientProtocol, 'conflict');
+    });
+    await test('Protocol identity: evidence voided before send blocks the native send click', async () => {
+      const page = await fixture({ stack: true });
+      await dropChatTitle(page);
+      let state = 'confirmed';
+      const live = { recipientProtocol: () => ({ state }) };
+      assert.equal(await adapter.openDirectMessage(page, lead, live), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead, live), true);
+      assert.equal(await adapter.fillDirectMessage(page, lead, MESSAGE, live), true);
+      const send = await adapter.prepareSend(page, lead, MESSAGE, live); assert.equal(send.state, 'ready');
+      state = 'conflict';
+      await assert.rejects(send.click(), error => error.actionNotStarted === true);
+      assert.equal((await actions(page)).send, 0);
+    });
+    await test('Protocol identity: a composer mounted before the entry click still needs the nickname', async () => {
+      const page = await fixture({ stack: true });
+      await page.evaluate(() => { document.getElementById('qa-conversation').hidden = false; document.getElementById('qa-active-chat').hidden = false; });
+      await dropChatTitle(page);
+      assert.equal(await adapter.openDirectMessage(page, lead, confirmedProtocol), true);
+      assert.equal(await adapter.ensureDirectMessageConversation(page, lead, confirmedProtocol), false);
+      assert.equal(adapter.getDiagnostic(page).code, 'DM_PREVIOUS_CONVERSATION_UNCONFIRMED');
+      assert.equal((await actions(page)).trustedInput, false);
+    });
     await test('Nickname identity: stop before entry prevents native click', async () => {
       const page = await fixture({ stack: true });
       await assert.rejects(adapter.openDirectMessage(page, lead, { beforeUiAction: () => { throw new Error('user stopped'); } }), /user stopped/);

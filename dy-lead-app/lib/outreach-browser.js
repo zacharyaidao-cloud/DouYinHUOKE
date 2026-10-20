@@ -57,7 +57,7 @@ function assertTarget(page, lead) {
 
 // This function is serialized into the page. Keep every dependency local.
 // Locating rules arrive as `selectors` (selectors.js OUTREACH), never by closure.
-function inspectControls({ kind, uid, numericUid, message, profileIdentity, rejectionRules = [], selectors }) {
+function inspectControls({ kind, uid, numericUid, message, profileIdentity, rejectionRules = [], selectors, protocolRecipient = '' }) {
   const S = selectors, P = selectors.profile, I = selectors.im;
   const rx = (list, flags) => new RegExp(list.map(source => '(?:' + source + ')').join('|'), flags);
   const any = list => list.join(',');
@@ -376,6 +376,26 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
     result.matched = !!result.chatNameMatches;
     return result;
   };
+  // Protocol recipient check. Node passes 'confirmed' only when the page's own
+  // IM history traffic in this window addressed solely the target's numeric-UID
+  // 1:1 conversation (dm-history-observer). The DOM part only binds that
+  // platform fact to the composer: the composer must sit in the single active
+  // chat, the profile must not have changed, and a readable chat-header name
+  // must not contradict the profile name (a stale previous chat would).
+  const protocolMatches = scope => {
+    if (protocolRecipient !== 'confirmed' || !scope) return false;
+    if (profileIdentity && !currentProfileMatches()) return false;
+    const chats = Array.from(document.querySelectorAll(dialogChatLayers)).filter(activeChatLayer);
+    if (chats.length > 1) return false;
+    if (chats.length === 1 ? chats[0] !== observedChatLayer(scope) : !!scope.closest(dialogSelector)) return false;
+    const user = observedChatUser(scope);
+    if (profileIdentity && user) {
+      const names = Array.from(user.querySelectorAll(any(I.chatHeaderTitle))).filter(visible);
+      const name = names.length === 1 ? displayName(names[0]) : '';
+      if (name && name !== profileIdentity.name) return false;
+    }
+    return true;
+  };
   const recipientHeaderInfo = scope => {
     if (scope.closest(stackLayerInDialog)) return { mismatch: false, hasTargetEvidence: false };
     // A narrow composer excludes the header; inspect its nearest conversation
@@ -402,7 +422,7 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
     if (layers.length !== 1) return { state: 'missing', history: unknown };
     const layer = layers[0], recipient = recipientHeaderInfo(layer);
     if (recipientInfo(layer).mismatch || recipient.mismatch
-      || !(recipient.hasTargetEvidence || observedChatIdentity(layer).matched)) return { state: 'missing', history: unknown };
+      || !(protocolMatches(layer) || recipient.hasTargetEvidence || observedChatIdentity(layer).matched)) return { state: 'missing', history: unknown };
     // Read only the current, verified chat. Conversation-list previews and
     // composers can contain identical text but are not historical messages.
     const lists = Array.from(layer.querySelectorAll(any(I.messageList))).filter(visible);
@@ -463,7 +483,8 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   const profileMatches = currentProfileMatches();
   const chatIdentity = observedChatIdentity(scope);
   for (const key of ['chatNameCount', 'chatNameMatches']) diagnostic[key] = chatIdentity[key];
-  const recipientEvidence = explicitTarget ? 'explicit_uid' : profileMatches && chatIdentity.matched ? 'dom_profile_name' : '';
+  // Platform response first; DOM uid attributes and the nickname comparison are fallbacks.
+  const recipientEvidence = protocolMatches(scope) ? 'protocol' : explicitTarget ? 'explicit_uid' : profileMatches && chatIdentity.matched ? 'dom_profile_name' : '';
   const result = { state: 'ready', editorPath: pathFor(editor), scopePath: pathFor(scope), diagnostic,
     hasTargetEvidence: !!recipientEvidence, recipientEvidence };
   diagnostic.recipientEvidence = recipientEvidence || 'unconfirmed';
@@ -501,6 +522,16 @@ function inspectControls({ kind, uid, numericUid, message, profileIdentity, reje
   return { ...result, path: pathFor(send[0]) };
 }
 
+// The protocol recipient source is the caller's dm-history-observer
+// (getRecipientEvidence). Only its state enum crosses into the page or logs.
+function protocolState(source) {
+  if (typeof source !== 'function') return 'none';
+  try {
+    const state = source()?.state;
+    return ['confirmed', 'conflict'].includes(state) ? state : 'none';
+  } catch (_) { return 'none'; }
+}
+
 async function inspect(page, lead, kind, message, waitMs = WAIT_MS, options = {}) {
   const uid = assertTarget(page, lead);
   const numericUid = /^[1-9]\d{0,31}$/.test(String(lead?.UID || '')) ? String(lead.UID) : '';
@@ -508,7 +539,11 @@ async function inspect(page, lead, kind, message, waitMs = WAIT_MS, options = {}
   do {
     check(options);
     assertTarget(page, lead);
-    const result = await page.evaluate(inspectControls, { kind, uid, numericUid, message, profileIdentity: conversations.get(page)?.profileIdentity || null, selectors: SELECTORS });
+    const session = conversations.get(page);
+    const recipientProtocol = protocolState(options?.recipientProtocol || session?.recipientProtocol);
+    const result = await page.evaluate(inspectControls, { kind, uid, numericUid, message, profileIdentity: session?.profileIdentity || null,
+      selectors: SELECTORS, protocolRecipient: recipientProtocol === 'confirmed' ? 'confirmed' : '' });
+    if (result.diagnostic) result.diagnostic.recipientProtocol = recipientProtocol;
     check(options);
     if (result.state !== 'missing' || Date.now() >= until) return result;
     await page.waitForTimeout(Math.min(100, Math.max(1, until - Date.now())));
@@ -671,7 +706,8 @@ async function openDirectMessage(page, lead, options = {}) {
       }
     }
     if (!clicked) return remember(page, { code: 'DM_ENTRY_CLICK_BLOCKED', diagnostic: { entryBlocker: blocker || 'unknown' } });
-    conversations.set(page, { uid: targetUid(lead), opened: true, baseline, conversationSelected: false, profileIdentity: clickProfileIdentity });
+    conversations.set(page, { uid: targetUid(lead), opened: true, baseline, conversationSelected: false, profileIdentity: clickProfileIdentity,
+      recipientProtocol: typeof options.recipientProtocol === 'function' ? options.recipientProtocol : null });
     return true;
   }
   catch (error) { await disposeHandles(baseline.flatMap(item => [item.editor, item.scope])); throw error; }
@@ -756,6 +792,14 @@ async function ensureDirectMessageConversation(page, lead, options = {}) {
     descriptor.diagnostic = { ...(descriptor.diagnostic || {}), ...(session.conversationDiagnostic || {}) };
     if (descriptor.state === 'ambiguous') return remember(page, descriptor);
     reused = descriptor.state === 'ready' && await reusesPreviousConversation(page, descriptor, session);
+    if (reused && descriptor.recipientEvidence === 'protocol') {
+      // The target's history traffic does not prove that a composer mounted
+      // before the entry click has switched to the target. Such a composer
+      // still needs the nickname match; otherwise it stays unconfirmed.
+      const nameMatched = descriptor.diagnostic?.chatNameMatches === 1;
+      descriptor = { ...descriptor, hasTargetEvidence: nameMatched, recipientEvidence: nameMatched ? 'dom_profile_name' : '',
+        diagnostic: { ...descriptor.diagnostic, recipientEvidence: nameMatched ? 'dom_profile_name' : 'unconfirmed' } };
+    }
     if (descriptor.state === 'ready' && descriptor.hasTargetEvidence) break;
     if (Date.now() >= until) return remember(page, descriptor.state === 'ready'
       ? { ...descriptor, code: reused ? 'DM_PREVIOUS_CONVERSATION_UNCONFIRMED' : 'DM_RECIPIENT_UNCONFIRMED' }
@@ -837,7 +881,7 @@ async function prepareSend(page, lead, message, options = {}) {
     state: 'ready',
     // click() disposes its editor handles. The captured identity still permits
     // a read-only, freshly verified feedback check after a matched rejection.
-    readFeedback: () => readChatObservation(page, lead, session.profileIdentity, options),
+    readFeedback: () => readChatObservation(page, lead, session.profileIdentity, options, session.recipientProtocol),
     async click() {
       try {
         if (invoked) throw Object.assign(new Error('本次发送准备已经使用，禁止重复点击'), { code: 'DM_SEND_PREPARATION_CONSUMED' });
@@ -868,11 +912,12 @@ async function prepareSend(page, lead, message, options = {}) {
   };
 }
 
-async function readChatObservation(page, lead, profileIdentity, options = {}) {
+async function readChatObservation(page, lead, profileIdentity, options = {}, recipientProtocol = null) {
   check(options);
   const uid = assertTarget(page, lead);
   const numericUid = /^[1-9]\d{0,31}$/.test(String(lead?.UID || '')) ? String(lead.UID) : '';
-  const result = await page.evaluate(inspectControls, { kind: 'chat-observation', uid, numericUid, profileIdentity, rejectionRules: REJECTION_RULES, selectors: SELECTORS });
+  const protocolRecipient = protocolState(options?.recipientProtocol || recipientProtocol) === 'confirmed' ? 'confirmed' : '';
+  const result = await page.evaluate(inspectControls, { kind: 'chat-observation', uid, numericUid, profileIdentity, rejectionRules: REJECTION_RULES, selectors: SELECTORS, protocolRecipient });
   check(options);
   assertTarget(page, lead);
   return result;
@@ -881,7 +926,7 @@ async function readChatObservation(page, lead, profileIdentity, options = {}) {
 async function readDirectMessageHistory(page, lead, options = {}) {
   const session = conversations.get(page);
   if (!session?.conversationReady || session.uid !== targetUid(lead)) return { state: 'unknown' };
-  const result = await readChatObservation(page, lead, session.profileIdentity, options);
+  const result = await readChatObservation(page, lead, session.profileIdentity, options, session.recipientProtocol);
   if (conversations.get(page) !== session || result.state !== 'ready') return { state: 'unknown' };
   return result;
 }

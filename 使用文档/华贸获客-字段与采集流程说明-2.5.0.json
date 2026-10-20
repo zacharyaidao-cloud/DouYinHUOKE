@@ -1,7 +1,7 @@
 {
   "title": "华贸获客字段字典与采集来源",
   "applicationVersion": "2.5.0",
-  "generatedAt": "2026-10-20T19:20:41.982Z",
+  "generatedAt": "2026-10-20T23:03:06.952Z",
   "schemaVersion": 3,
   "dataFormat": "本机 JSON 记录；compactColumns 定义紧凑主表，原字段 registry 保留读取投影、详情与 Excel 全字段",
   "publicLeadFields": {
@@ -1013,8 +1013,8 @@
       "repeatIntervalDays": 7
     },
     "action": {
-      "userIntervalSec": 30,
-      "userIntervalJitter": 0.4,
+      "userIntervalSec": 20,
+      "userIntervalJitter": 0.25,
       "pacingVersion": 1
     },
     "human": {
@@ -1338,8 +1338,8 @@
         "startsAfter": "当前实际访问作品结束"
       },
       "nextUser": {
-        "baseSec": 30,
-        "jitter": 0.4,
+        "baseSec": 20,
+        "jitter": 0.25,
         "startsAfter": "当前实际访问用户处理结束"
       },
       "sameProfileDelay": 0,
@@ -1696,7 +1696,7 @@
     },
     {
       "file": "dy-lead-app/engine.js",
-      "sha256": "02852a5248f4efb7749f7da3aa3ad27eafd80fcb7eced291fa80e43534f47242"
+      "sha256": "fb5f7322dc16bfc90475826680d9475b04617bd6a88a749b26cda0a28ad1ac3a"
     },
     {
       "file": "dy-lead-app/ai.js",
@@ -1712,15 +1712,15 @@
     },
     {
       "file": "dy-lead-app/server.js",
-      "sha256": "d9490c524e4c52a0007588e0b448f4912b30ed692c639908848ebd78eb3b17d6"
+      "sha256": "0d1a91b14e74ae1f8354ffa74d78f301fc7eb5e7df5b896e91edc949c035dc47"
     },
     {
       "file": "dy-lead-app/store.js",
-      "sha256": "66878faa71a9e97af844f5f9857e4e966a45eaed3a6454a1060fcc3c1379843c"
+      "sha256": "d315bf2749891252a94c3b461cdc026ec2519440c6b5cff6347104c1190a25ce"
     },
     {
       "file": "dy-lead-app/web/app.js",
-      "sha256": "b267460d4a5de297aeb72a9c30ce444f9645a4f599b21fae367b4f6e08ceafa4"
+      "sha256": "b2c5ca7f8673301bbc8f8646dfb29053a6ba063ade3bf027c6ffabf4d27ab13a"
     },
     {
       "file": "dy-lead-app/web/index.html",
@@ -1736,7 +1736,7 @@
     },
     {
       "file": "dy-lead-app/lib/dm-protocol.js",
-      "sha256": "193141839192753ea1d3707923d5882ab084579329d1362cb3dc07174d01b771"
+      "sha256": "9467c649aa04686d92bb9d62e563c55657a07e417b39cc955ad2203e77f6210d"
     },
     {
       "file": "dy-lead-app/lib/dm-receipt-observer.js",
@@ -1792,7 +1792,7 @@
     },
     {
       "file": "build-tools/build.js",
-      "sha256": "32c139d657400e8519f454c28c53723456a7048668435e44148e6118650ef809"
+      "sha256": "8a03d8f2c1bad81f0fa51294cec339b6af76512b6026575c29b163f403cf3092"
     },
     {
       "file": "build-tools/build.ps1",
@@ -1820,7 +1820,7 @@
     },
     {
       "file": "build-tools/verify-embedded-outreach.js",
-      "sha256": "73bdd18315649cc83ce52b9e72dda53e764b8070a62a2fa0f3256de3799ff9d6"
+      "sha256": "1a0fa0957b45585a40e9331eeb387f2e94d04145c752893668f6d446a85a6849"
     }
   ],
   "privacy": "仅源代码字段定义、默认配置及公开服务路径；无客户记录、API Key、登录 Cookie、令牌或签名查询参数。"

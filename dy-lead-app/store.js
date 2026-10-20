@@ -125,8 +125,9 @@ const DEFAULT_SETTINGS = {
   },
   search: {
     enabled: true,
-    intervalSec: 60, intervalJitter: 0.2,
-    maxPages: 20, dailySearchLimit: 30, minCommentCount: 0
+    intervalSec: 20, intervalJitter: 0.3,
+    // publishedWithinDays：只保留最近 N 天发布的作品（0=不限），旧作品不进入评论采集
+    maxPages: 20, dailySearchLimit: 30, minCommentCount: 0, publishedWithinDays: 30
   },
   keywords: { intent: [...DEFAULT_KEYWORDS.intent], exclude: [...DEFAULT_KEYWORDS.exclude] },
   human: {
@@ -275,14 +276,16 @@ function setSearchResults(list) { writeJson(F.searchResults, Array.isArray(list)
 function addSearchResults(keyword, workType, works) {
   const list = getSearchResults();
   const seen = new Set(list.map(x => String(x.awemeId)));
+  let added = 0;
   for (const work of works) {
     if (!work || !work.awemeId || seen.has(String(work.awemeId))) continue;
     seen.add(String(work.awemeId));
+    added++;
     list.push({ ...work, keyword: String(keyword || ''), workType: require('./lib/search-works').searchWorkType(work, workType), searchType: String(workType || 'video'), foundAt: nowStr() });
   }
-  // 保留最近 500 条，避免无限增长
-  setSearchResults(list.slice(-500));
-  return list.length;
+  // 保留最近 3000 条（深翻单个关键词就有 100+ 条），避免无限增长
+  setSearchResults(list.slice(-3000));
+  return added;
 }
 
 function todayStr() {

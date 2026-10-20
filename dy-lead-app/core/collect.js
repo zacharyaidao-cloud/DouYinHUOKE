@@ -24,6 +24,7 @@
  */
 const { openComments, scrollComments } = require('../lib/collection-browser');
 const { readPageComments } = require('../lib/page-comments');
+const { DEFAULT_PACING, between } = require('./pacing');
 
 const pause = (page, min, max) => page.waitForTimeout(min + Math.round(Math.random() * (max - min)));
 
@@ -48,7 +49,8 @@ function visibleCommentList() {
   return Array.from(document.querySelectorAll('[data-e2e="comment-list"]')).some(list => list.getClientRects().length > 0 && list.clientHeight > 50);
 }
 
-async function collectWork(session, work, { maxRounds = 40, roundWaitMs = 8000 } = {}) {
+async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PACING.collect } = {}) {
+  const roundWaitMs = pacing.roundWaitMs;
   const { page, trace } = session;
   const comments = new Map();
   const sources = new Map(); // 'main' | 'insert' → { hasMore, minCursor, pages }
@@ -91,7 +93,7 @@ async function collectWork(session, work, { maxRounds = 40, roundWaitMs = 8000 }
   try {
     trace.step('collect.open', { awemeId: work.awemeId, type: work.workType, url });
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await pause(page, 1200, 2000);
+    await between(page, pacing.afterOpen);
     if (await session.verificationShown()) {
       if (!await session.waitForHumanVerification()) return { work, state: 'interrupted', reason: '安全验证未完成', comments: [...comments.values()] };
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -115,7 +117,7 @@ async function collectWork(session, work, { maxRounds = 40, roundWaitMs = 8000 }
         await page.waitForTimeout(1000);
       }
       trace.step('collect.open_comments', { ...panel, visibleList: await page.evaluate(visibleCommentList).catch(() => false) });
-      await pause(page, 1200, 2000);
+      await between(page, pacing.afterOpen);
       let idle = 0;
       for (let round = 1; round <= maxRounds; round++) {
         if (done()) break;
@@ -130,7 +132,7 @@ async function collectWork(session, work, { maxRounds = 40, roundWaitMs = 8000 }
         if (done()) break;
         if (ended && apiPages === pagesBefore) { state = 'complete'; reason = '可见评论列表显示“暂时没有更多评论”'; break; }
         if (idle >= 3) { state = 'interrupted'; reason = '连续 3 轮无新评论且无结束标记'; break; }
-        await pause(page, 1800, 3500);
+        await between(page, pacing.betweenScrolls);
       }
     }
     const main = sources.get('main'), insert = sources.get('insert');

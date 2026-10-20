@@ -58,6 +58,25 @@ class Session {
     return this;
   }
 
+  /**
+   * 挂接到软件已经打开的账号页面（engine.launchAccount 返回的 page），不另开浏览器。
+   * 用完必须 detach()，否则监听会留在账号页面上。
+   */
+  static attach(page, trace) {
+    const session = new Session({ profileDir: '', trace });
+    session.page = page;
+    session.context = null;
+    session.responseHandler = response => session.onResponse(response).catch(() => {});
+    page.on('response', session.responseHandler);
+    session.login = { state: 'authenticated', at: Date.now() }; // 软件侧已按自身流程确认登录
+    return session;
+  }
+
+  detach() {
+    if (this.page && this.responseHandler) this.page.off('response', this.responseHandler);
+    this.listeners.clear();
+  }
+
   async close() { await this.context?.close().catch(() => {}); }
 
   /** 订阅解析后的接口事件；返回取消函数。 */

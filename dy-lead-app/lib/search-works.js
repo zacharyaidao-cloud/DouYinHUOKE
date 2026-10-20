@@ -51,6 +51,8 @@ function extractWork(raw) {
     authorUid: identifier(author.sec_uid) || identifier(author.uid),
     commentCount: asInt(statistics.comment_count),
     diggCount: asInt(statistics.digg_count),
+    // 发布时间（秒）：搜索阶段按“最近一周/一个月发布”提前筛选，旧作品不进评论采集
+    createTime: asInt(info.create_time) || null,
     workType,
     link: `https://www.douyin.com/${workType === 'note' ? 'note' : 'video'}/${awemeId}`
   };

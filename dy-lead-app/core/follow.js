@@ -52,6 +52,10 @@ async function follow(page, target, trace, { timeoutMs = 10000 } = {}) {
   const onResponse = async response => {
     if (!pending.has(response.request())) return;
     const json = await response.json().catch(() => null);
+    // 记录响应体字段名与身份字段是否指向目标（不记取值），用来核对旧回执匹配规则为何对不上
+    if (json && typeof json === 'object') trace.step('follow.response_shape', { keys: Object.keys(json).slice(0, 20),
+      userIdIsTarget: json.user_id === undefined ? 'absent' : String(json.user_id) === String(target.uid),
+      secUserIdIsTarget: json.sec_user_id === undefined ? 'absent' : json.sec_user_id === target.secUid });
     if (json && json.status_code === 0 && [1, 2].includes(json.follow_status)) settle({ state: 'confirmed_success', evidence: `commit/follow/user status_code=0 follow_status=${json.follow_status}` });
     else settle({ state: 'confirmed_failure', reason: (json && (json.status_msg || `status_code=${json.status_code}`)) || `HTTP ${response.status()}`, statusCode: json?.status_code });
   };

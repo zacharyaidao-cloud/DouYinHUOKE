@@ -78,6 +78,24 @@ function clickSearchTab(label, selectors) {
  * 窗口本身不可滚。优先滚可滚动量最大的容器，回退滚窗口。
  */
 function scrollSearchFeed(step, selectors) {
+  // step='bottom'：直接滚到结果列表底部。实测结果页只在滚到底部附近时才请求下一页，
+  // 固定 1400–1600 像素在结果多于 20 条后到不了底部，第 3 页起会停滞。
+  if (step === 'bottom') {
+    const scrollers = [];
+    for (const el of document.querySelectorAll(selectors.feedContainer.join(','))) {
+      if (el.scrollHeight > el.clientHeight + 200 && el.clientHeight > 200) scrollers.push(el);
+    }
+    scrollers.sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+    const feed = scrollers[0];
+    if (feed) {
+      const before = feed.scrollTop;
+      feed.scrollTop = feed.scrollHeight;
+      return { container: String(feed.className).slice(0, 60), scrolled: feed.scrollTop - before, atBottom: feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 5 };
+    }
+    const before = window.scrollY;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    return { container: 'window', scrolled: window.scrollY - before, atBottom: true };
+  }
   const amount = Number(step) || 1400;
   const candidates = [];
   for (const el of document.querySelectorAll(selectors.feedContainer.join(','))) {

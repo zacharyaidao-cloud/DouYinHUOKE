@@ -3,6 +3,9 @@ const crypto = require('node:crypto');
 const { TaskStopError } = require('./scheduler');
 const { SEARCH_PATH, parseSearchBody } = require('./lib/search-works');
 const browserSearch = require('./lib/search-browser-actions');
+const { Session } = require('./core/session');
+const { searchKeyword, filterWorks } = require('./core/search');
+const { mergePacing } = require('./core/pacing');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -14,7 +17,10 @@ function normalizeSearchInput(input, settings) {
   const search = settings.search || {};
   const maxPages = Math.min(50, Math.max(1, Number(input && input.maxPages) || Number(search.maxPages) || 20));
   const minCommentCount = Math.max(0, Number(input && input.minCommentCount) || Number(search.minCommentCount) || 0);
-  return { keywords, workType, maxPages, minCommentCount };
+  // 只采最近 N 天发布的作品（0=不限）；界面未传时用设置值，默认 30 天
+  const days = input && input.publishedWithinDays != null && input.publishedWithinDays !== '' ? Number(input.publishedWithinDays) : Number(search.publishedWithinDays ?? 30);
+  const publishedWithinDays = Number.isFinite(days) && days > 0 ? Math.min(3650, days) : 0;
+  return { keywords, workType, maxPages, minCommentCount, publishedWithinDays };
 }
 
 // 有界轮询：条件满足立即返回，超时返回最后一次结果（不抛错）。
@@ -101,22 +107,9 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
         alive = await launchAccount(accountId, { checkStopped: () => scheduler.checkStopped() });
       }
       const page = alive.page;
-      const worksBuffer = [];
-      let hasMore = false;
-      const onResponse = async response => {
-        try {
-          const address = new URL(response.url());
-          if (!/(^|\.)douyin\.com$/.test(address.hostname)) return;
-          if (!SEARCH_PATH.test(address.pathname)) return;
-          // 用 text() 而不是 json()：综合首页的 stream 接口是多段 JSON，json() 会直接失败
-          const body = await response.text().catch(() => '');
-          const parsed = parseSearchBody(body);
-          if (!parsed.ok) return;
-          hasMore = parsed.hasMore;
-          for (const work of parsed.works) worksBuffer.push(work);
-        } catch (e) { /* 单条响应异常不影响任务，翻页无进展会停止 */ }
-      };
-      page.on('response', onResponse);
+      // 搜索动作与响应解析统一走核心流程 core/search.js（实测规格见 使用文档/正确流程规格）。
+      const session = Session.attach(page, { step: (name, data) => store.log(accountId, '搜索：' + name + ' ' + JSON.stringify(data || {})), response() {} });
+      const pacing = mergePacing({}).search;
       try {
         let keywordIndex = 0;
         for (const keyword of opts.keywords) {
@@ -128,119 +121,36 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
             break;
           }
           publish({ currentKeyword: keyword });
-          setTask({ status: `正在搜索「${keyword}」（${keywordIndex + 1}/${opts.keywords.length}）`,
-            detail: `已搜索 ${summary.completed} 个关键词｜累计找到 ${summary.works} 个作品`, done: keywordIndex, total: opts.keywords.length });
+          setTask({ stage: 'searching', status: `正在搜索「${keyword}」（${keywordIndex + 1}/${opts.keywords.length}）`,
+            detail: `已搜索 ${summary.completed} 个关键词｜累计新增 ${summary.works} 个作品`, done: keywordIndex, total: opts.keywords.length });
           store.bumpDaily(accountId, 'searchAttempts');
-          worksBuffer.length = 0; hasMore = false;
-          let navError = '';
-          try {
-            await scheduler.prepare({ accountId, kind: 'ui', uid: '' }, async () => {
-              scheduler.checkStopped();
-              const nav = await navigateSearch(page, keyword, opts.workType, scheduler, {
-                // 切页签前清空“综合”页已到的结果，只保留目标范围的响应
-                onBeforeTab: () => { worksBuffer.length = 0; hasMore = false; }
-              });
-              store.log(accountId, `关键词搜索：${keyword} 已通过首页搜索框进入结果页` + (nav.tabVerified ? '' : `；范围页签未确认切换（${nav.tabMethod}），入库时按作品类型过滤`));
-            });
-          } catch (error) {
-            if (error instanceof TaskStopError) throw error;
-            navError = error.message || '进入搜索页失败';
-          }
-          if (navError) {
-            store.log(accountId, `关键词搜索：${keyword} 未执行：${navError}`);
-            setTask({ status: `「${keyword}」未执行：${navError}`, detail: '请人工查看账号浏览器首页搜索框，稍后重试' });
-            await sleep(1500);
-            keywordIndex++;
-            summary.completed = keywordIndex;
-            publish({ works: summary.works, completed: keywordIndex });
-            checkpoint({ processedKeywords: [...(taskState.checkpoint?.processedKeywords || []), keyword], state: 'running' });
-            if (keywordIndex < opts.keywords.length) {
-              const gap = Math.round(Math.max(10, Number(settings.search.intervalSec) || 60) * 1000);
-              const until = Date.now() + gap;
-              setTask({ stage: 'waiting_search', waitingReason: 'search', status: `下一关键词间隔，剩余 ${Math.ceil(gap / 1000)} 秒，可随时停止`, waitingUntil: new Date(until).toISOString() });
-              while (Date.now() < until) {
-                scheduler.checkStopped();
-                await sleep(Math.min(1000, until - Date.now()));
-              }
-              setTask({ waitingUntil: null, waitingReason: '' });
-            }
-            continue;
-          }
-          // 等待首屏结果响应（最多约 20 秒）
-          for (let i = 0; i < 40 && worksBuffer.length === 0; i++) {
-            scheduler.checkStopped();
-            await sleep(500);
-          }
-          await checkPageHealth(page, accountId, '');
+          // 授权与停止检查（不发生页面动作）
+          await scheduler.prepare({ accountId, kind: 'ui', uid: '' }, async () => {});
+          const result = await searchKeyword(session, keyword, { pages: opts.maxPages, workType: opts.workType, pacing,
+            checkStopped: () => scheduler.checkStopped(),
+            onPage: ({ pageNo, works }) => {
+              publish({ pages: pageNo });
+              setTask({ status: `正在搜索「${keyword}」第 ${pageNo}/${opts.maxPages} 页，已读 ${works} 个作品`, done: keywordIndex, total: opts.keywords.length });
+            } });
           scheduler.checkStopped();
-          if (worksBuffer.length === 0) {
-            const existing = store.getSearchResults().filter(w => String(w.keyword) === String(keyword)).length;
-            const hint = existing > 0
-              ? `本次未收到搜索接口响应（可能触发平台限流或验证），历史已有 ${existing} 条该关键词结果仍可使用；建议稍后重试或人工查看账号浏览器`
-              : '搜索页未返回作品响应，可能触发平台验证或限流；请人工查看账号浏览器，稍后再试';
-            store.log(accountId, `关键词搜索：${keyword}（${opts.workType}）未收到作品响应，` + hint);
-            setTask({ status: `「${keyword}」未收到搜索响应：${hint}`, detail: '已停止本关键词，可稍后重新搜索' });
-            await sleep(1500);
-            keywordIndex++;
-            summary.completed = keywordIndex;
-            publish({ works: summary.works, completed: keywordIndex });
-            checkpoint({ processedKeywords: [...(taskState.checkpoint?.processedKeywords || []), keyword], state: 'running' });
-            if (keywordIndex < opts.keywords.length) {
-              const gap = Math.round(Math.max(10, Number(settings.search.intervalSec) || 60) * 1000);
-              const until = Date.now() + gap;
-              setTask({ stage: 'waiting_search', waitingReason: 'search', status: `下一关键词间隔，剩余 ${Math.ceil(gap / 1000)} 秒，可随时停止`, waitingUntil: new Date(until).toISOString() });
-              while (Date.now() < until) {
-                scheduler.checkStopped();
-                await sleep(Math.min(1000, until - Date.now()));
-              }
-              setTask({ waitingUntil: null, waitingReason: '' });
-            }
-            continue;
+          if (!result.ok) {
+            store.log(accountId, `关键词搜索：${keyword} 未取得结果：${result.reason}`);
+            if (/安全验证/.test(result.reason)) throw new TaskStopError('抖音要求安全验证，请在账号窗口人工完成验证', 'PLATFORM_VERIFICATION');
           }
-          // 自然滚动触发分页，拦截每页响应；每页实时更新界面进度
-          let idlePages = 0;
-          for (let p = 1; p <= opts.maxPages; p++) {
-            scheduler.checkStopped();
-            await scheduler.before({ accountId, kind: 'scroll', operation: 'search_scroll', uid: '' });
-            const before = worksBuffer.length;
-            const scrollInfo = await page.evaluate(browserSearch.scrollSearchFeed, 1400).catch(() => null);
-            if (p === 1 && scrollInfo) store.log(accountId, `关键词搜索：${keyword} 滚动容器=${scrollInfo.container}`);
-            let progressed = false;
-            for (let i = 0; i < 20; i++) {
-              scheduler.checkStopped();
-              await sleep(400);
-              if (worksBuffer.length > before) { progressed = true; break; }
-              if (!hasMore && worksBuffer.length === before && i >= 5) break;
-            }
-            publish({ pages: p });
-            setTask({ stage: 'searching', status: `正在搜索「${keyword}」第 ${p}/${opts.maxPages} 页，已读 ${worksBuffer.length} 个作品`,
-              detail: `累计新增 ${summary.works + worksBuffer.filter(w => Number(w.commentCount) >= opts.minCommentCount).length} 个待存作品（保存前去重）`, done: keywordIndex, total: opts.keywords.length });
-            if (!progressed && !hasMore && worksBuffer.length === before) break;
-            // 单页偶尔慢不代表到底：连续 2 页都没有新响应才停止，避免空转
-            idlePages = progressed ? 0 : idlePages + 1;
-            if (idlePages >= 2 && before > 0) break;
-          }
-          await checkPageHealth(page, accountId, '');
-          scheduler.checkStopped();
-          const seenIds = new Set();
-          const filtered = worksBuffer.filter(work => {
-            if (seenIds.has(work.awemeId)) return false;
-            seenIds.add(work.awemeId);
-            // 视频/图文范围只保留同类型作品（页签未确认切换时兜底）
-            if ((opts.workType === 'video' || opts.workType === 'note') && work.workType !== opts.workType) return false;
-            return Number(work.commentCount) >= opts.minCommentCount;
-          });
-          const added = store.addSearchResults(keyword, opts.workType, filtered);
+          // 视频/图文范围只保留同类型；再按发布时间与评论数提前筛选，旧作品与评论少的不进入采集
+          const typed = (result.works || []).filter(work => !(opts.workType === 'video' || opts.workType === 'note') || work.workType === opts.workType);
+          const { kept, dropped } = filterWorks(typed, { publishedWithinDays: opts.publishedWithinDays, minComments: opts.minCommentCount });
+          const added = store.addSearchResults(keyword, opts.workType, kept);
           summary.works += added;
           keywordIndex++;
           summary.completed = keywordIndex;
           publish({ works: summary.works, completed: keywordIndex });
-          store.log(accountId, `关键词搜索：${keyword}（${opts.workType}）翻页 ${Math.min(opts.maxPages, summary.pages)} 页，新增 ${added} 个作品`);
+          store.log(accountId, `关键词搜索：${keyword}（${opts.workType}）翻 ${result.pages || 0} 页（${result.stopReason || result.reason || '完成'}），读到 ${typed.length} 个作品；` +
+            `筛掉发布超过 ${opts.publishedWithinDays || '不限'} 天 ${dropped.old} 个、评论少于 ${opts.minCommentCount} 的 ${dropped.fewComments} 个、无发布时间 ${dropped.noTime} 个；新增 ${added} 个`);
           checkpoint({ processedKeywords: [...(taskState.checkpoint?.processedKeywords || []), keyword], state: 'running' });
-          // 关键词之间的强制间隔（默认 60 秒 ± 抖动），可随时停止
           if (keywordIndex < opts.keywords.length) {
-            const base = Math.max(10, Number(settings.search.intervalSec) || 60);
-            const jitter = Math.min(1, Math.max(0, Number(settings.search.intervalJitter) || 0.2));
+            const base = Math.max(5, Number(settings.search.intervalSec) || 20);
+            const jitter = Math.min(1, Math.max(0, Number(settings.search.intervalJitter) || 0.3));
             const gap = Math.round(base * (1 + (Math.random() * 2 - 1) * jitter) * 1000);
             const until = Date.now() + gap;
             setTask({ stage: 'waiting_search', waitingReason: 'search', status: `下一关键词间隔，剩余 ${Math.ceil(gap / 1000)} 秒，可随时停止`, waitingUntil: new Date(until).toISOString() });
@@ -259,7 +169,7 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
           detail: '勾选作品后可一键加入采集队列', done: summary.completed, total: opts.keywords.length });
         return { ok: true, runId, keywords: summary.completed, works: summary.works, stopReason: summary.stopReason };
       } finally {
-        page.off('response', onResponse);
+        session.detach();
       }
     } catch (error) {
       const stopped = error instanceof TaskStopError || taskState.stopRequested;

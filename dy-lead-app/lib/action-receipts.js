@@ -231,12 +231,15 @@ function createFollowReceiptObserver({ page, targetUid, targetSecUid, targetNume
         const bytes = await response.body();
         if (done || !observer.active() || !Buffer.isBuffer(bytes) || bytes.length > MAX_BYTES) return;
         const payload = JSON.parse(bytes.toString('utf8'));
-        if (!payload || Array.isArray(payload) || payload.status_code !== 0 || ![1, 2].includes(payload.follow_status)) return;
+        // 2026-10-21 实测：请求表单 type=1、user_id=目标数字 UID；响应 status_code=0、
+        // follow_status=1（互关 2；私密账号为 4=已请求，按已发出关注请求处理）。
+        if (!payload || Array.isArray(payload) || payload.status_code !== 0 || ![1, 2, 4].includes(payload.follow_status)) return;
         if (payload.sec_user_id !== undefined && payload.sec_user_id !== target.sec) return;
         if (payload.user_id !== undefined && (!target.numeric
           || typeof payload.user_id === 'number' && !Number.isSafeInteger(payload.user_id)
           || String(payload.user_id) !== target.numeric)) return;
-        finish({ state: 'confirmed_success', reason: '', evidence: '本次同页目标关注 POST 返回 status_code=0 且 follow_status=1/2' });
+        finish({ state: 'confirmed_success', reason: payload.follow_status === 4 ? '对方为私密账号，已发送关注请求' : '',
+          evidence: `本次同页目标关注 POST 返回 status_code=0 且 follow_status=${payload.follow_status}` });
       }).catch(() => { /* decode failure leaves pending */ });
     }
   });

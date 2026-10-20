@@ -19,6 +19,7 @@ const adapter = require('../lib/outreach-browser');
 const { createFollowReceiptObserver, createDmReceiptObserver } = require('../lib/action-receipts');
 const { readPageHealth } = require('../lib/browser-actions');
 const { follow: followUser } = require('./follow');
+const { DEFAULT_PACING, between } = require('./pacing');
 
 const pause = (page, min, max) => page.waitForTimeout(min + Math.round(Math.random() * (max - min)));
 const ACCOUNT_STOP = { verification: '平台要求安全验证', restricted: '平台提示操作频繁或功能受限', daily_limit: '平台提示今日次数已达上限', login: '登录已失效' };
@@ -55,7 +56,6 @@ async function outreachOneUnsafe(session, target, { follow, dm, message }) {
     trace.step('outreach.follow', result.follow);
     platform = await platformState(page);
     if (platform.stop) { result.stop = platform; return result; }
-    await pause(page, 2000, 4000);
   }
 
   // c. 私信
@@ -103,14 +103,17 @@ async function outreachOne(session, target, options) {
   }
 }
 
-async function outreachList(session, targets, { follow = true, dm = true, message, onResult = () => {} } = {}) {
+async function outreachList(session, targets, { follow = true, dm = true, message, pacing = DEFAULT_PACING.outreach, onResult = () => {} } = {}) {
   const { page, trace } = session;
   const results = [];
+  const acting = state => ['confirmed_success', 'confirmed_failure', 'pending_verification'].includes(state);
   let sent = 0;
   for (let index = 0; index < targets.length; index++) {
-    if (index) await pause(page, 25000, 40000);
-    if (sent && sent % 5 === 0 && results[results.length - 1]?.dm?.state === 'confirmed_success') {
-      trace.step('outreach.rest', { afterSent: sent }); await pause(page, 90000, 180000);
+    // 只有上一位真的做了动作（点了关注或尝试发送）才等用户间隔；全部跳过的用户不占间隔
+    const previous = results[results.length - 1];
+    if (previous && (acting(previous.follow?.state) || acting(previous.dm?.state))) await between(page, pacing.betweenUsers);
+    if (sent && pacing.restEvery && sent % pacing.restEvery === 0 && previous?.dm?.state === 'confirmed_success') {
+      trace.step('outreach.rest', { afterSent: sent }); await between(page, pacing.rest);
     }
     const result = await outreachOne(session, targets[index], { follow, dm, message });
     if (result.dm?.state === 'confirmed_success') sent++;

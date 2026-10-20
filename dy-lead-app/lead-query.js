@@ -1,5 +1,6 @@
 'use strict';
 const { projectLead } = require('./lib/lead-fields');
+const { competitorReason } = require('./lib/competitor-screen');
 const { workIdFromLink } = require('./lib/video-links');
 const AI = require('./ai');
 const { parseCommentTimestamp } = require('./lib/comment-evidence');
@@ -10,6 +11,9 @@ function aiExclusionReason(lead, videos = {}) {
   const author = (videos[workIdFromLink(lead.videoLink)] || {}).authorSecUid;
   if (lead.isAuthor || author && String(lead.uid) === String(author)) return '作品作者不参与 AI 判断';
   if (!String(lead.demand || '').trim()) return '评论为空，无法进行 AI 判断';
+  // 同行/服务商先排除：不调用 AI、不进入触达（规则与实测依据见 lib/competitor-screen.js）
+  const competitor = competitorReason(lead);
+  if (competitor) return competitor;
   return '';
 }
 function isCommentUser(lead, videos = {}) { return !aiExclusionReason(lead, videos); }

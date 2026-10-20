@@ -551,7 +551,8 @@ async function inspect(page, lead, kind, message, waitMs = WAIT_MS, options = {}
 }
 
 async function bindElement(page, selector) {
-  return selector ? page.locator(selector).elementHandle({ timeout: 500 }) : null;
+  // 实测：主页在定位后约数百毫秒内仍会重绘，500ms 常超时（“定位关注按钮出错”）；给到 3 秒，等页面稳定
+  return selector ? page.locator(selector).elementHandle({ timeout: 3000 }) : null;
 }
 
 async function sameElement(page, selector, handle) {

@@ -1157,9 +1157,12 @@ const { aiJudgeOne, aiJudgeBatch, aiTask } = createAiTasks({
   getSignal: () => taskAbort && taskAbort.signal
 });
 const { createCollectionTasks } = require('./engine-collection-tasks');
+// 单作品采集走核心流程（core/collect.js，按实测规格判完成）；短链等需先跳转解析的链接仍由旧 collectOne 处理。
+const { createCoreCollectOne } = require('./engine-core-collect');
+const collectOneCore = createCoreCollectOne({ store, workflow, setTask, legacyCollectOne: collectOne, dedupeKey, matchIntent });
 const collectionTasks = createCollectionTasks({
   store, taskState, setTask, failTask, makeScheduler, checkpoint, parseVideoList,
-  getAlive, launchAccount, collectOne, runAi: options => aiTask(options)
+  getAlive, launchAccount, collectOne: collectOneCore, runAi: options => aiTask(options)
 });
 const { createSearchTasks } = require('./engine-search-tasks');
 const searchTasks = createSearchTasks({

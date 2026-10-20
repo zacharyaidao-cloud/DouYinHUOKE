@@ -70,7 +70,7 @@ const save = (name, value) => fs.writeFileSync(path.join(outDir, name), JSON.str
       const result = await collectWork(session, targets[index]);
       comments.push(...result.comments);
       summary.push({ awemeId: result.work.awemeId, type: result.work.workType, listed: result.work.commentCount, collected: result.comments.length, state: result.state, reason: result.reason });
-      save('comments.json', comments); save('summary.json', summary);
+      save('comments.json', comments.map(({ raw, ...row }) => row)); save('summary.json', summary);
       if (/安全验证未完成/.test(result.reason)) { trace.step('run.stop', { reason: result.reason }); break; }
     }
     trace.step('run.done', { works: summary.length, comments: comments.length,

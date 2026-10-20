@@ -62,7 +62,7 @@ async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PAC
       if (![1, '1', undefined, null].includes(raw.level)) continue; // 只要一级评论
       const item = normalize(raw, work);
       if (!item.cid || !item.user.secUid || comments.has(item.cid)) continue;
-      comments.set(item.cid, { ...item, origin });
+      comments.set(item.cid, { ...item, origin, raw }); // raw：接口同款蛇形字段，软件写线索时复用原有字段规则
       added++;
     }
     return added;

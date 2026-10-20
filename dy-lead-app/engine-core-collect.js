@@ -11,8 +11,14 @@ const { collectWork } = require('./core/collect');
 const { mergePacing } = require('./core/pacing');
 const { userMetadata } = require('./lib/user-metadata');
 const { commentEvidence } = require('./lib/comment-evidence');
+const { selectWorkDetail, workDescription } = require('./lib/work-metadata');
+const { readPageWorkMetadata } = require('./lib/page-work-metadata');
+const { DETAIL_PATH, recordWorkDetail, recordPageMetadata } = require('./lib/work-record');
 
-function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedupeKey, matchIntent }) {
+// 页面切换中（执行上下文被销毁 / 登录读取明确标记为页面切换）时短暂等待后重新确认，最多 3 次，与旧采集一致
+const navigationRace = error => /Execution context was destroyed|Cannot find context with specified id/.test(String(error && error.message || ''));
+
+function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedupeKey, matchIntent, checkPageHealth = null, fmtTs = sec => String(sec), sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
   return async function collectOneCore(accountId, page, workInput, settings, scheduler, beforeCollect = () => '', onCommentLeads = () => {}, collectionRunId = '') {
     const item = typeof workInput === 'object' ? { ...workInput } : { id: String(workInput), type: 'video' };
     if (!item.id || !['video', 'note'].includes(item.type)) {
@@ -33,13 +39,67 @@ function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedu
       },
       response() {}
     });
+    // 每个作品打开后先复核登录：会话失效 / 验证 / 证据不足都暂停整个队列，并把同一原因写到账号卡片（旧采集同样行为）
+    // 页面切换最多重试 3 次；页面明确“仍在加载”（SPA 正文未就绪）最多等 40 次 × 0.5 秒。登录提示、验证、证据不足立即停止。
+    const afterOpen = checkPageHealth ? async current => {
+      for (let transitions = 0, loadings = 0; ;) {
+        scheduler.checkStopped();
+        try { await checkPageHealth(current, accountId); return; } catch (error) {
+          const loading = ['LOGIN_PENDING', 'LOGIN_UNCONFIRMED'].includes(error.code) && /账号页面尚未加载完成|抖音页面仍在加载/.test(error.message || '');
+          const transition = !loading && (navigationRace(error) || error.code === 'LOGIN_UNCONFIRMED' && error.pageTransition === true);
+          if (loading && ++loadings < 40) {
+            setTask({ status: '作品页面尚在加载，等待浏览器确认账号状态，可随时停止' });
+            await sleep(500);
+            continue;
+          }
+          if (!transition || ++transitions > 3) throw error;
+          setTask({ status: '作品页面正在切换，等待重新确认登录状态，可随时停止' });
+          store.log(accountId, `采集：页面切换中，重新检查登录状态（${transitions}/3）`);
+          await sleep(700 + Math.round(Math.random() * 600));
+          try { await current.waitForLoadState('domcontentloaded', { timeout: 10000 }); } catch (_) { /* 继续重试 */ }
+        }
+      }
+    } : null;
+    // 作品资料：页面自己请求的作品详情接口（只收目标 aweme_id），与旧采集同一入库规则
+    const detailTasks = new Set();
+    const onDetail = response => {
+      const task = (async () => {
+        const address = new URL(response.url());
+        if (!/(^|.)douyin.com$/.test(address.hostname) || address.pathname !== DETAIL_PATH) return;
+        if (address.searchParams.get('aweme_id') && address.searchParams.get('aweme_id') !== work.id) return;
+        if (response.status() < 200 || response.status() >= 300) return;
+        const aw = selectWorkDetail(await response.json(), work.id);
+        if (!aw || String(aw.aweme_id) !== work.id) return;
+        const recorded = recordWorkDetail({ store, videoId: work.id, url: work.url, workType: work.type, aw, fmtTs, sourcePath: address.pathname });
+        store.log(accountId, `采集：作品详情入库（描述${recorded.descriptionState === 'available' ? '已获取' : '待确认'}）`);
+      })().catch(() => { /* 非目标或无法解析的详情响应忽略 */ });
+      detailTasks.add(task); task.finally(() => detailTasks.delete(task));
+    };
+    page.on('response', onDetail);
     let result;
     try {
       const previous = store.getVideos()[work.id] || {};
       result = await collectWork(session, { awemeId: work.id, workType: work.type, desc: previous.desc || '', authorUid: previous.authorSecUid || '' },
-        { maxRounds: Math.max(5, Number(settings.collect.maxScrolls) || 40), pacing: mergePacing({}).collect });
-    } finally { session.detach(); }
+        { maxRounds: Math.max(5, Number(settings.collect.maxScrolls) || 40), pacing: mergePacing({}).collect, afterOpen });
+    } catch (error) {
+      // 账号级停止（登录失效 / 验证 / 手动停止）：本作品记为中断，原因与任务、账号卡片一致，再交给队列暂停
+      await Promise.allSettled([...detailTasks]);
+      const videos = store.getVideos(), info = videos[work.id] || { awemeId: work.id };
+      if (!info.desc && !info.descriptionState) Object.assign(info, workDescription(null, info));
+      Object.assign(info, { awemeId: work.id, videoLink: work.url, workType: work.type, collectionState: 'interrupted',
+        collectionReason: error && error.message || '采集中断' });
+      videos[work.id] = info;
+      try { store.setVideos(videos); } catch (_) { /* 以原错误为准 */ }
+      throw error;
+    } finally { session.detach(); page.off('response', onDetail); }
+    await Promise.allSettled([...detailTasks]);
     scheduler.checkStopped();
+    // 作品页内嵌数据（图文常不发详情接口）：只读当前作品页
+    try {
+      const pageMetadata = await page.evaluate(readPageWorkMetadata, work.id);
+      recordPageMetadata({ store, videoId: work.id, url: work.url, workType: work.type, pageMetadata, pageUrl: page.url() });
+    } catch (_) { /* 页面已离开或读取失败：保留接口资料 */ }
+    const authorSecUid = (store.getVideos()[work.id] || {}).authorSecUid || '';
 
     // 写线索：沿用旧流程的字段与去重规则（dedupeKey = 账号+作品+用户+评论文本）
     const leads = store.getLeads();
@@ -58,7 +118,7 @@ function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedu
       const lead = {
         id: maxId + 1, uid: '', account: '', UID: '', nickname: '', signature: '', homepage: '',
         trigger: intent.kw, demand: text, ...commentEvidence(c), region: c.ip_label || '', videoLink: work.url, fetchTime: t,
-        isAuthor: !!row.isAuthor, intent: intent.hit, excluded: intent.excluded,
+        isAuthor: !!row.isAuthor || !!authorSecUid && (c.user || {}).sec_uid === authorSecUid, intent: intent.hit, excluded: intent.excluded,
         diggCount: c.digg_count != null ? c.digg_count : '', replyCount: c.reply_comment_total != null ? c.reply_comment_total : '',
         status: 'new', accountId: String(accountId), businessId: workflow.businessId(settings),
         ...(collectionRunId ? { collectionRunId } : {}), ...captured
@@ -78,9 +138,12 @@ function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedu
 
     const complete = result.state === 'complete';
     const videos = store.getVideos(), info = videos[work.id] || { awemeId: work.id };
+    if (!info.desc && !info.descriptionState) Object.assign(info, workDescription(null, info));
     Object.assign(info, { awemeId: work.id, videoLink: work.url, workType: work.type,
       collectionState: complete ? 'complete' : result.state === 'interrupted' ? 'interrupted' : 'partial',
-      collectionReason: result.reason, collectionCheckpoint: { comments: result.comments.length, added, supplemented, updatedAt: t } });
+      collectionReason: result.reason, collectionCheckpoint: { comments: result.comments.length, added, supplemented,
+        rounds: result.stats.rounds, lastHasMore: result.stats.lastHasMore, commentResponseCount: result.stats.apiPages, noProgressRounds: result.stats.noProgressRounds,
+        paginationSourceCount: result.stats.listCount, embeddedFirstPage: result.stats.embeddedRead, updatedAt: t } });
     videos[work.id] = info; store.setVideos(videos);
     store.log(accountId, `采集：作品 ${work.id}（${work.type === 'note' ? '图文' : '视频'}）${complete ? '完整' : '未完整'}：${result.reason}；一级评论 ${result.comments.length} 条，新增 ${added}，回填 ${supplemented}`);
     // 账号级事件：验证未完成 → 停止整个队列；其他作品级未完整由队列记录后继续

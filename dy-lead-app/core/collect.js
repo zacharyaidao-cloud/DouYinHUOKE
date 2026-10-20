@@ -49,12 +49,13 @@ function visibleCommentList() {
   return Array.from(document.querySelectorAll('[data-e2e="comment-list"]')).some(list => list.getClientRects().length > 0 && list.clientHeight > 50);
 }
 
-async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PACING.collect } = {}) {
+// afterOpen：作品页打开（含人工验证）之后、读取评论之前的检查钩子，抛错即中止本作品（软件用它复核登录状态）
+async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PACING.collect, afterOpen = null } = {}) {
   const roundWaitMs = pacing.roundWaitMs;
   const { page, trace } = session;
   const comments = new Map();
   const sources = new Map(); // 'main' | 'insert' → { hasMore, minCursor, pages }
-  let lastSource = null, apiPages = 0, embeddedRead = false;
+  let lastSource = null, apiPages = 0, embeddedRead = false, roundsDone = 0, idle = 0;
   const sourceOf = name => { if (!sources.has(name)) sources.set(name, { hasMore: null, minCursor: null, pages: 0 }); return sources.get(name); };
   const add = (list, origin) => {
     let added = 0;
@@ -98,6 +99,9 @@ async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PAC
       if (!await session.waitForHumanVerification()) return { work, state: 'interrupted', reason: '安全验证未完成', comments: [...comments.values()] };
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     }
+    if (afterOpen) {
+      try { await afterOpen(page); } catch (error) { throw Object.assign(error, { collectAbort: true }); }
+    }
     const embedded = await readEmbedded();
     if (embedded.ok) {
       embeddedRead = true;
@@ -118,9 +122,9 @@ async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PAC
       }
       trace.step('collect.open_comments', { ...panel, visibleList: await page.evaluate(visibleCommentList).catch(() => false) });
       await between(page, pacing.afterOpen);
-      let idle = 0;
       for (let round = 1; round <= maxRounds; round++) {
         if (done()) break;
+        roundsDone = round;
         const before = comments.size, pagesBefore = apiPages;
         const scrolled = await page.evaluate(scrollComments).catch(error => ({ state: 'error', error: error.message }));
         const until = Date.now() + roundWaitMs;
@@ -140,12 +144,17 @@ async function collectWork(session, work, { maxRounds = 40, pacing = DEFAULT_PAC
     if (done()) { state = firstPageMissing ? 'partial' : 'complete'; reason = firstPageMissing ? `第一页缺失（最早收到的评论页游标为 ${main.minCursor}）` : allEnded() ? '所有评论列表都返回 has_more=0' : '可见评论列表返回 has_more=0'; }
     else if (state !== 'complete' && !reason) reason = `达到 ${maxRounds} 轮上限`;
   } catch (error) {
+    // 钩子判定的账号级问题（登录失效 / 验证等）原样抛给调用方，由它暂停整个队列
+    if (error && error.collectAbort) { delete error.collectAbort; throw error; }
     state = 'interrupted'; reason = error.message;
   } finally { off(); }
   const list = [...comments.values()];
   trace.step('collect.done', { awemeId: work.awemeId, state, reason, comments: list.length, apiPages,
     lists: Object.fromEntries([...sources].map(([name, source]) => [name, { hasMore: source.hasMore, pages: source.pages, minCursor: source.minCursor }])) });
-  return { work, state, reason, comments: list };
+  const last = lastSource ? sources.get(lastSource) : sources.get('main');
+  // stats：供软件写采集检查点（与旧采集同名字段）
+  return { work, state, reason, comments: list,
+    stats: { apiPages, embeddedRead, rounds: roundsDone, noProgressRounds: idle, lastHasMore: last ? last.hasMore : null, listCount: sources.size } };
 }
 
 module.exports = { collectWork };

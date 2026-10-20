@@ -18,6 +18,7 @@ const { assertTaskLogin } = require('./lib/task-login');
 const { parseVideoLinks, normalizeVideoLink, workIdFromLink } = require('./lib/video-links');
 const { openComments, scrollComments, landingWork, navigateCollectionPage } = require('./lib/collection-browser');
 const { selectWorkDetail, workDescription } = require('./lib/work-metadata');
+const { recordWorkDetail, recordPageMetadata } = require('./lib/work-record');
 const { readPageWorkMetadata } = require('./lib/page-work-metadata');
 const { readPageComments } = require('./lib/page-comments');
 const { userMetadata, identifier } = require('./lib/user-metadata');
@@ -778,44 +779,9 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
         if (!aw || !aw.aweme_id || String(aw.aweme_id) !== videoId) return;
         acceptedResponse = true;
         {
-          const stat = aw.statistics || {};
-          const author = aw.author || {};
-          const videos = store.getVideos();
-          const previous = videos[videoId] || {};
-          detailCaptured = { authorSecUid: author.sec_uid || previous.authorSecUid || '' };
-          const content = workDescription(aw, previous, { source: 'api' });
-          const textContributed = Object.keys(content.workRawText || {}).some(key => typeof aw[key] === 'string' && aw[key].trim() && content.workRawTextSources[key] === 'api' && content.workRawText[key] === aw[key]);
-          const sourceObserved = textContributed || content.workTextState === 'empty' && !previous.workText && !previous.desc
-            || !previous.workSourcePath && (content.imageCountSource === 'api' && content.imageCount !== '' || content.awemeTypeSource === 'api' && content.awemeType !== '');
-          const workSourcePath = sourceObserved ? address.pathname : previous.workSourcePath || '';
-          videos[String(aw.aweme_id)] = {
-            ...previous,
-            awemeId: String(aw.aweme_id),
-            videoLink: url,
-            workType: work.type,
-            ...content,
-            workSourcePath,
-            workSourcePaths: sourceObserved ? [...new Set([...(Array.isArray(previous.workSourcePaths) ? previous.workSourcePaths : []), address.pathname])] : previous.workSourcePaths || [],
-            workCapturedAt: sourceObserved ? store.nowStr() : previous.workCapturedAt || '',
-            diggCount: stat.digg_count != null ? stat.digg_count : previous.diggCount,
-            commentCount: stat.comment_count != null ? stat.comment_count : previous.commentCount,
-            shareCount: stat.share_count != null ? stat.share_count : previous.shareCount,
-            collectCount: stat.collect_count != null ? stat.collect_count : previous.collectCount,
-            authorNickname: author.nickname || previous.authorNickname || '',
-            authorSecUid: author.sec_uid || previous.authorSecUid || '',
-            authorFollowerCount: author.follower_count != null ? author.follower_count : previous.authorFollowerCount,
-            createTime: aw.create_time != null ? fmtTs(aw.create_time) : previous.createTime || '',
-            durationSec: aw.duration != null ? Math.round(Number(aw.duration) / 1000) : previous.durationSec || '',
-            capturedAt: store.nowStr()
-          };
-          store.setVideos(videos);
-          const authorLeads = store.getLeads();
-          let marked = false;
-          for (const l of authorLeads) {
-            if (detailCaptured.authorSecUid && workIdFromLink(l.videoLink) === videoId && l.uid === detailCaptured.authorSecUid && !l.isAuthor) { l.isAuthor = true; marked = true; }
-          }
-          if (marked) store.setLeads(authorLeads);
-          store.log(accountId, `采集：作品详情入库（描述${videos[videoId].descriptionState === 'available' ? '已获取' : '待确认'}）`);
+          const recorded = recordWorkDetail({ store, videoId, url, workType: work.type, aw, fmtTs, sourcePath: address.pathname });
+          detailCaptured = { authorSecUid: recorded.authorSecUid };
+          store.log(accountId, `采集：作品详情入库（描述${recorded.descriptionState === 'available' ? '已获取' : '待确认'}）`);
         }
       }
     } catch (e) {
@@ -940,25 +906,7 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
     scheduler.checkStopped();
     const pageMetadata = await evaluateStable(readPageWorkMetadata, videoId);
     scheduler.checkStopped();
-    const videos = store.getVideos(), current = videos[videoId] || {};
-    if (pageMetadata && /^page/.test(pageMetadata.descriptionSource || '')
-      && ['available', 'empty', 'missing'].includes(pageMetadata.descriptionState)) {
-      const content = workDescription(pageMetadata, current, { source: pageMetadata.descriptionSource });
-      const pageRaw = pageMetadata.workRawText || pageMetadata;
-      const textContributed = Object.keys(content.workRawText || {}).some(key => typeof pageRaw[key] === 'string' && pageRaw[key].trim() && content.workRawTextSources[key] === pageMetadata.descriptionSource && content.workRawText[key] === pageRaw[key]);
-      const sourceObserved = textContributed || content.workTextState === 'empty' && !current.workText && !current.desc
-        || !current.workSourcePath && (content.imageCountSource === pageMetadata.descriptionSource && content.imageCount !== '' || content.awemeTypeSource === pageMetadata.descriptionSource && content.awemeType !== '');
-      const actualPath = new URL(page.url()).pathname.match(/^\/(?:video|note)\/(\d{1,24})\/?$/);
-      if (!actualPath || actualPath[1] !== videoId) return;
-      const path = actualPath[0].replace(/\/$/, '');
-      videos[videoId] = { ...current, awemeId: videoId, videoLink: url, workType: work.type,
-        ...content,
-        workSourcePath: sourceObserved ? path : current.workSourcePath || '',
-        workSourcePaths: sourceObserved ? [...new Set([...(Array.isArray(current.workSourcePaths) ? current.workSourcePaths : []), path])] : current.workSourcePaths || [],
-        workCapturedAt: sourceObserved ? store.nowStr() : current.workCapturedAt || '',
-        descriptionCapturedAt: sourceObserved ? store.nowStr() : current.descriptionCapturedAt || '' };
-      store.setVideos(videos);
-    }
+    recordPageMetadata({ store, videoId, url, workType: work.type, pageMetadata, pageUrl: page.url() });
   };
   try {
     // 只有两个实际作品之间等待；短链展开与规范地址跳转不重复加间隔。
@@ -1161,7 +1109,7 @@ const { aiJudgeOne, aiJudgeBatch, aiTask } = createAiTasks({
 const { createCollectionTasks } = require('./engine-collection-tasks');
 // 单作品采集走核心流程（core/collect.js，按实测规格判完成）；短链等需先跳转解析的链接仍由旧 collectOne 处理。
 const { createCoreCollectOne } = require('./engine-core-collect');
-const collectOneCore = createCoreCollectOne({ store, workflow, setTask, legacyCollectOne: collectOne, dedupeKey, matchIntent });
+const collectOneCore = createCoreCollectOne({ store, workflow, setTask, legacyCollectOne: collectOne, dedupeKey, matchIntent, checkPageHealth: checkAccountPageHealth, fmtTs });
 const collectionTasks = createCollectionTasks({
   store, taskState, setTask, failTask, makeScheduler, checkpoint, parseVideoList,
   getAlive, launchAccount, collectOne: collectOneCore, runAi: options => aiTask(options)

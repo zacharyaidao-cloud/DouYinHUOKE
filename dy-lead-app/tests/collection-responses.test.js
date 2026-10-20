@@ -10,6 +10,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { normalizeVideoLink, workIdFromLink } = require('../lib/video-links');
 const { selectWorkDetail, workDescription } = require('../lib/work-metadata');
+const { recordWorkDetail, recordPageMetadata } = require('../lib/work-record');
 const { userMetadata, identifier } = require('../lib/user-metadata');
 const { commentEvidence } = require('../lib/comment-evidence');
 
@@ -74,7 +75,7 @@ function fixture({ responses = [], healthResponses = [], openResponses = [], scr
         if (waitHook) waitHook({ ms, emitResponse, abort: () => { context.taskState.stopRequested = true; controller.abort(); } });
       }
       callback();
-    }, ms === 15000 ? readTimeoutMs : ms === 200 ? feedbackDelayMs : ms), clearTimeout, normalizeVideoLink, workIdFromLink, selectWorkDetail, workDescription, userMetadata, identifier, commentEvidence, store,
+    }, ms === 15000 ? readTimeoutMs : ms === 200 ? feedbackDelayMs : ms), clearTimeout, normalizeVideoLink, workIdFromLink, selectWorkDetail, workDescription, recordWorkDetail, recordPageMetadata, userMetadata, identifier, commentEvidence, store,
     workflow: { businessId: () => 'default' },
     matchIntent: () => ({ kw: '', hit: false, excluded: false }), fmtTs: () => '', checkpoint(patch) { checkpoints.push(structuredClone(patch)); },
     taskState: { stopRequested: false }, taskAbort: controller, setTask(status) { statuses.push(status); }, authorize: async () => true,

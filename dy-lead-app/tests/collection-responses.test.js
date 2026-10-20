@@ -13,7 +13,7 @@ const { selectWorkDetail, workDescription } = require('../lib/work-metadata');
 const { userMetadata, identifier } = require('../lib/user-metadata');
 const { commentEvidence } = require('../lib/comment-evidence');
 
-function fixture({ responses = [], healthResponses = [], openResponses = [], scrollResponses = [], existingLeads = [], existingVideos = {}, pageMetadata = { descriptionState: 'missing' }, pageResponses = [], workType = 'note', readTimeoutMs = 15000, feedbackDelayMs = 0, maxScrolls = 1, panelState = 'ready', probeStates = [], waitHook, onScroll, onOpen, healthHook, beforeSetLeads, beforeSetVideos } = {}) {
+function fixture({ responses = [], healthResponses = [], openResponses = [], scrollResponses = [], existingLeads = [], existingVideos = {}, pageMetadata = { descriptionState: 'missing' }, pageResponses = [], embeddedComments = null, workType = 'note', readTimeoutMs = 15000, feedbackDelayMs = 0, maxScrolls = 1, panelState = 'ready', probeStates = [], waitHook, onScroll, onOpen, healthHook, beforeSetLeads, beforeSetVideos } = {}) {
   const engineSource = fs.readFileSync(path.join(__dirname, '..', 'engine.js'), 'utf8');
   const start = engineSource.indexOf('async function collectOne(');
   const end = engineSource.indexOf('/** 多链接队列采集', start);
@@ -22,7 +22,7 @@ function fixture({ responses = [], healthResponses = [], openResponses = [], scr
   assert(start >= 0 && end > start && dedupeStart >= 0 && dedupeEnd > dedupeStart, 'Read actual collection functions from the source engine');
   const workId = '7000000000000000123';
   const canonicalUrl = `https://www.douyin.com/${workType}/${workId}`;
-  let responseListener = null, scrolls = 0, openings = 0, probes = 0, metadataReads = 0, feedbackTimeouts = 0, healthChecks = 0, notifyJsonStarted;
+  let responseListener = null, scrolls = 0, openings = 0, probes = 0, metadataReads = 0, embeddedReads = 0, feedbackTimeouts = 0, healthChecks = 0, notifyJsonStarted;
   const sleeps = [], statuses = [], capturedIds = [], capturedBatches = [], boundaries = [], checkpoints = [], logs = [];
   const jsonStarted = new Promise(resolve => { notifyJsonStarted = resolve; });
   const controller = new AbortController();
@@ -42,6 +42,9 @@ function fixture({ responses = [], healthResponses = [], openResponses = [], scr
     async evaluate(callback, argument) {
       if (callback === context.readPageWorkMetadata) {
         metadataReads++; pageResponses.forEach(emitResponse); return typeof pageMetadata === 'function' ? pageMetadata(metadataReads) : pageMetadata;
+      }
+      if (callback === context.readPageComments) {
+        embeddedReads++; return embeddedComments || { ok: false, reason: 'no_embedded_comments' };
       }
       if (callback === context.openComments) {
         if (argument && argument.probe) {
@@ -79,7 +82,7 @@ function fixture({ responses = [], healthResponses = [], openResponses = [], scr
       healthChecks++;
       if (healthHook) await healthHook({ checks: healthChecks, TaskStopError: FixtureTaskStopError });
       if (!healthResponsesEmitted) { healthResponsesEmitted = true; healthResponses.forEach(emitResponse); }
-    }, isLoggedIn: async () => true, openComments() {}, scrollComments() {}, readPageWorkMetadata() {},
+    }, isLoggedIn: async () => true, openComments() {}, scrollComments() {}, readPageWorkMetadata() {}, readPageComments() {},
     SLEEP: async ms => { sleeps.push(ms); if (waitHook) waitHook({ ms, emitResponse, abort: () => { context.taskState.stopRequested = true; controller.abort(); } }); },
     landingWork: raw => ({ ...normalizeVideoLink(raw), needsCanonicalNavigation: false }),
     async navigateCollectionPage() {
@@ -94,7 +97,7 @@ function fixture({ responses = [], healthResponses = [], openResponses = [], scr
   return {
     workId, store, page,
     run: () => collectOne('fixture-account', page, { ...normalizeVideoLink(canonicalUrl), force: true }, settings, scheduler, () => '', (ids, counts) => { capturedIds.push(...ids); capturedBatches.push(structuredClone({ ids, counts })); }, 'run-fixture'),
-    listener: () => responseListener, scrolls: () => scrolls, openings: () => openings, probes: () => probes, metadataReads: () => metadataReads, feedbackTimeouts: () => feedbackTimeouts, healthChecks: () => healthChecks, jsonStarted, sleeps, statuses, capturedIds, capturedBatches, boundaries, checkpoints, logs,
+    listener: () => responseListener, embeddedReads: () => embeddedReads, scrolls: () => scrolls, openings: () => openings, probes: () => probes, metadataReads: () => metadataReads, feedbackTimeouts: () => feedbackTimeouts, healthChecks: () => healthChecks, jsonStarted, sleeps, statuses, capturedIds, capturedBatches, boundaries, checkpoints, logs,
     abort() { context.taskState.stopRequested = true; controller.abort(); }
   };
 }
@@ -902,4 +905,24 @@ test('正常分页结束后仅最终状态写盘失败，也须以保存错误�
   assert.equal(f.store.leads.length, 1); assert.equal(f.store.leads[0].uid, 'persisted-before-finalize');
   assert.deepEqual(f.capturedBatches[0].counts, { added: 1, supplemented: 0 });
   assert.notEqual(f.store.videos[f.workId]?.collectionState, 'complete'); assert.equal(f.listener(), null);
+});
+
+test('图文第一页评论内嵌在页面里且已到底：不等评论接口，直接完整', async () => {
+  // 2026-10-20 实测：直接打开 /note/<id> 时第一页评论内嵌在 __pace_f，点评论页签不会再请求 comment/list。
+  const f = fixture({ panelState: 'opened', maxScrolls: 120,
+    embeddedComments: { ok: true, payload: { status_code: 0, comments: [comment('embedded-a'), comment('embedded-b')], has_more: 0, cursor: 20, total: 2 } } });
+  const result = await f.run();
+  assert.equal(f.embeddedReads(), 1);
+  assert.equal(result.newLeads, 2); assert.equal(result.complete, true);
+  assert.equal(f.openings(), 0); assert.equal(f.scrolls(), 0);
+  assert.equal(f.store.videos[f.workId].collectionState, 'complete');
+});
+
+test('内嵌第一页还有更多时，后续翻页继续由页面评论接口推进', async () => {
+  const f = fixture({ panelState: 'opened', maxScrolls: 3,
+    embeddedComments: { ok: true, payload: { status_code: 0, comments: [comment('embedded-first')], has_more: 1, cursor: 20, total: 2 } },
+    scrollResponses: [{ requestCursor: 20, body: { status_code: 0, comments: [comment('api-next')], has_more: 0, cursor: 40, total: 2 } }] });
+  const result = await f.run();
+  assert.equal(result.newLeads, 2); assert.equal(result.complete, true);
+  assert.equal(f.openings(), 1); assert.equal(f.scrolls(), 1);
 });

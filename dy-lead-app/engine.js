@@ -19,6 +19,7 @@ const { parseVideoLinks, normalizeVideoLink, workIdFromLink } = require('./lib/v
 const { openComments, scrollComments, landingWork, navigateCollectionPage } = require('./lib/collection-browser');
 const { selectWorkDetail, workDescription } = require('./lib/work-metadata');
 const { readPageWorkMetadata } = require('./lib/page-work-metadata');
+const { readPageComments } = require('./lib/page-comments');
 const { userMetadata, identifier } = require('./lib/user-metadata');
 const { commentEvidence } = require('./lib/comment-evidence');
 const { resolveBrowserRuntime, browserLaunchError } = require('./lib/browser-runtime');
@@ -1004,6 +1005,24 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
     // the video detail endpoint. Read only this already-loaded target page;
     // no extra navigation, signed request replay or full-page text guessing.
     await capturePageDescription();
+
+    // 2026-10-20 实测：直接打开作品页时第一页评论常内嵌在页面数据里，点“评论”页签也不会再请求
+    // comment/list；不满一页的作品永远等不到评论接口。先读内嵌第一页，按同一套规则入库；
+    // 它带 has_more，满一页时后续翻页仍由页面自己的评论接口推进。
+    if (lastHasMore !== 0 && commentResponseCount === 0) {
+      const embedded = await evaluateStable(readPageComments, videoId).catch(() => null);
+      scheduler.checkStopped();
+      if (embedded && embedded.ok) {
+        const payload = embedded.payload;
+        await onResponse({
+          url: () => `https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${videoId}&cursor=0&count=${payload.comments.length}`,
+          status: () => 200,
+          json: async () => payload
+        });
+        if (responseFailure) throw responseFailure;
+        store.log(accountId, `采集：读取页面内嵌的第一页评论 ${payload.comments.length} 条（has_more=${payload.has_more}，总评论 ${payload.total == null ? '未知' : payload.total}）`);
+      }
+    }
 
     const sc = settings.collect;
     if (lastHasMore !== 0) {

@@ -228,3 +228,18 @@ test('honors byte offsets of Uint8Array views', () => {
   const view = new Uint8Array(padded.buffer, padded.byteOffset + 1, bytes.length);
   assert.ok(parseSendRequest(view, options()));
 });
+
+test('检查码 2 且无可识别提示文本时按账号级频繁处理；有文本时仍以文本为准', () => {
+  // 2026-10-21 实测：限流期间连续 9 人收到 send=3/check=2 但没有提示文本，旧逻辑继续发送
+  const record = request();
+  const bare = parseSendResponse(makeSendResponse({ status: 3, extraSend: int(5, 2) }), record);
+  assert.equal(bare.state, 'confirmed_failure');
+  assert.equal(bare.failureScope, 'account'); assert.equal(bare.failureCode, 'DM_ACCOUNT_FREQUENT');
+  assert.match(bare.reason, /检查码：2/);
+  const unknownText = parseSendResponse(makeSendResponse({ status: 3, extraSend: join(int(5, 2), data(6, '未识别业务失败')) }), record);
+  assert.equal(unknownText.failureScope, 'account');
+  const duplicate = parseSendResponse(makeSendResponse({ status: 3, extraSend: join(int(5, 2), data(6, '请勿重复发送')) }), record);
+  assert.equal(duplicate.failureScope, 'recipient'); assert.match(duplicate.reason, /DM_DUPLICATE_MESSAGE/);
+  const otherCode = parseSendResponse(makeSendResponse({ status: 3, extraSend: int(5, 999) }), record);
+  assert.equal(otherCode.failureScope, undefined);
+});

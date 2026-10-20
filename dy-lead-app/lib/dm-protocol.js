@@ -178,8 +178,13 @@ function parseSendResponse(value, record) {
       4: '服务端未向目标正常发送本次私信：仅自己可见'
     };
     if (!Object.hasOwn(failures, status.toString())) return null;
-    const detail = status === 3n ? classifyCheckMessage(send.get(6)) : null;
     const checkCode = positive(send.get(5)) ? send.get(5).toString() : '';
+    // 2026-10-21 实测：send=3 且检查码 2 的回执共 20 余次，全部出现在账号被限流期间——有时带“操作频繁”提示文本
+    // （business=7180），有时提示文本缺失；缺失时旧逻辑记为普通“消息检查未通过”，导致连续 9 人被拒仍继续发送。
+    // 有可识别文本时以文本为准（重复发送/接收人限制等）；文本缺失且检查码为 2 时按账号级“操作频繁”处理。
+    const detail = status === 3n ? (classifyCheckMessage(send.get(6)) || (checkCode === '2' ? {
+      code: 'DM_ACCOUNT_FREQUENT', failureScope: 'account', reason: '平台限流：消息检查未通过且检查码为 2（按账号级操作频繁处理）'
+    } : null)) : null;
     return {
       state: 'confirmed_failure', reason: (detail ? `[${detail.code}] ${detail.reason}` : failures[status.toString()]) + (checkCode ? `（检查码：${checkCode}）` : ''),
       evidence: `im-protobuf:cmd=100;status=0;send=${status};matched-request+sender+client` + (checkCode ? `;check=${checkCode}` : '')

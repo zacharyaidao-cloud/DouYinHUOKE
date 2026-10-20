@@ -1009,7 +1009,8 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
     // 2026-10-20 实测：直接打开作品页时第一页评论常内嵌在页面数据里，点“评论”页签也不会再请求
     // comment/list；不满一页的作品永远等不到评论接口。先读内嵌第一页，按同一套规则入库；
     // 它带 has_more，满一页时后续翻页仍由页面自己的评论接口推进。
-    if (lastHasMore !== 0 && commentResponseCount === 0) {
+    // 内嵌数据随页面流式到达，打开后立即读可能还没有：这里读一次，放弃前（未收到评论接口时）再读一次。
+    const readEmbeddedComments = async () => {
       const embedded = await evaluateStable(readPageComments, videoId).catch(() => null);
       scheduler.checkStopped();
       if (embedded && embedded.ok) {
@@ -1022,7 +1023,8 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
         if (responseFailure) throw responseFailure;
         store.log(accountId, `采集：读取页面内嵌的第一页评论 ${payload.comments.length} 条（has_more=${payload.has_more}，总评论 ${payload.total == null ? '未知' : payload.total}）`);
       }
-    }
+    };
+    if (lastHasMore !== 0 && commentResponseCount === 0) await readEmbeddedComments();
 
     const sc = settings.collect;
     if (lastHasMore !== 0) {
@@ -1047,6 +1049,7 @@ async function collectOne(accountId, page, workInput, settings, scheduler, befor
         });
         if (!panel || panel.state === 'missing') throw new TaskStopError('未找到当前作品的评论入口或评论区域，已暂停；请打开评论后继续采集', 'COMMENT_PANEL_NOT_FOUND');
         if (commentResponseCount === 0) await waitForComments(() => commentResponseCount > 0);
+        if (commentResponseCount === 0) await readEmbeddedComments();
         if (commentResponseCount === 0) throw new TaskStopError('打开评论后仍未收到目标作品的评论响应，已暂停；请检查网络或页面提示后继续采集', 'COMMENT_RESPONSE_MISSING');
       }
     }

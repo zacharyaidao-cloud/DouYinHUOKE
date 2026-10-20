@@ -1309,7 +1309,7 @@ test('fresh client defaults show empty workspaces and remain usable at desktop a
           assert.equal(await page.locator('#prompt-slots input:checked').inputValue(), 'prompt-1');
           assert.equal(await page.locator('#lic-mac').evaluate(element => getComputedStyle(element).fontSize), '17px');
         } else if (target === 'leads') {
-          assert.equal(await page.locator('#a-act-min, #a-act-max').count(), 0); assert.match(await page.locator('#action-pacing-summary').textContent(), /30 秒 ±40%/);
+          assert.equal(await page.locator('#a-act-min, #a-act-max').count(), 0); assert.match(await page.locator('#action-pacing-summary').textContent(), /20 秒 ±25%/);
           assert.equal(await page.locator('#a-fol-limit').inputValue(), '150'); assert.equal(await page.locator('#a-dm-limit').inputValue(), '150');
         } else if (target === 'logs') {
           assert.equal(await page.locator('#log-account').inputValue(), 'system', 'system AI logs remain available without any platform account');

@@ -60,8 +60,8 @@ try {
   assert.equal(settings.collect.maxScrolls, 120);
   assert.equal(settings.follow.dailyLimit, 150);
   assert.equal(settings.dm.dailyLimit, 150);
-  assert.deepEqual(settings.dm.sessionPause, { count: 5, pauseMinSec: 60, pauseMaxSec: 300 });
-  assert.deepEqual(settings.search, { enabled: true, intervalSec: 60, intervalJitter: .2, maxPages: 20, dailySearchLimit: 30, minCommentCount: 0 });
+  assert.deepEqual(settings.dm.sessionPause, { count: 10, pauseMinSec: 3300, pauseMaxSec: 3600 });
+  assert.deepEqual(settings.search, { enabled: true, intervalSec: 20, intervalJitter: .3, maxPages: 20, dailySearchLimit: 30, minCommentCount: 0, publishedWithinDays: 30 });
   assert.equal(settings.ai.promptPresets.length, 3);
   assert.equal(settings.ai.activePromptId, 'prompt-1');
   assert(settings.ai.promptPresets[0].prompt.includes('亚马逊'));
@@ -71,7 +71,7 @@ try {
   assert.equal(settings.ai.promptPresets[2].prompt, '');
   for (const field of ['businessDesc', 'targetCustomers', 'clearNeeds', 'misjudgments']) assert(settings.ai[field].trim());
   for (const marker of ['【用户评论】{需求内容}', '【评论时间】{评论时间}', '【用户UID】{UID}', '【用户名称】{昵称}', '【所在视频描述】{视频描述}']) assert(settings.ai.promptPresets[0].prompt.includes(marker), '缺少固定字段：' + marker);
-  assert.deepEqual(settings.action, { userIntervalSec: 30, userIntervalJitter: .4, pacingVersion: 1 });
+  assert.deepEqual(settings.action, { userIntervalSec: 20, userIntervalJitter: .25, pacingVersion: 1 });
   assert.equal(settings.collect.autoAiAfterCollect, true);
   assert.equal(settings.collect.linkIntervalSec, 10);
   assert.equal(settings.collect.scrollIntervalSec, 3);

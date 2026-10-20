@@ -31,7 +31,7 @@ if (!accounts.length || accounts.some(a => !a.profileDir) || !listFile || !outDi
   const trace = createTrace(path.join(outDir, 'trace.jsonl'));
   try {
     await distribute({ accounts, targets, message, trace, follow: arg('follow') !== '0', dm: arg('dm') !== '0',
-      perTurn: Math.max(1, Number(arg('per-turn')) || 10), cooldownMin: Math.max(1, Number(arg('cooldown-min')) || 30),
+      perTurn: Math.max(1, Number(arg('per-turn')) || 10), cooldownMin: Math.max(1, Number(arg('cooldown-min')) || 60),
       onResult: row => { all.push({ ...row, at: new Date().toISOString() }); fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8'); } });
   } catch (error) { trace.step('dist.error', { message: error.message }); }
 })();

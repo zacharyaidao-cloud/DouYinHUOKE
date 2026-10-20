@@ -104,7 +104,7 @@ const DEFAULT_SETTINGS = {
     skipEmptyText: true,
     linkIntervalSec: 10, linkIntervalJitter: 0.2, autoAiAfterCollect: true
   },
-  action: { userIntervalSec: 30, userIntervalJitter: 0.4, pacingVersion: 1 },
+  action: { userIntervalSec: 20, userIntervalJitter: 0.25, pacingVersion: 1 },
   follow: { enabled: true, dailyLimit: 150 },
   dm: {
     enabled: true,
@@ -112,12 +112,14 @@ const DEFAULT_SETTINGS = {
     dailyLimit: 150,
     skipAuthor: true,
     repeat: { enabled: false, intervalDays: 7 },
-    sessionPause: { count: 5, pauseMinSec: 60, pauseMaxSec: 300 },
+    // 2026-10-21 实测：单账号约 11–12 条陌生人私信/10 分钟即触发“频繁”，完全安静约 60 分钟后恢复。
+    // 默认每发 10 条休息 55–60 分钟，主动避开频繁；多账号时由账号轮换消化这段休息。
+    sessionPause: { count: 10, pauseMinSec: 3300, pauseMaxSec: 3600 },
     // 多账号私信分发（v2 设计）
     poolAccounts: [],
-    frequentCooldownSec: 1800,
+    frequentCooldownSec: 3600, // 触发频繁后至少安静 60 分钟再试（实测 30 分钟内反复试探均被拒）
     dailyResetHour: 8,
-    batchPerAccount: 5,
+    batchPerAccount: 10,
     accountSwitchIntervalSec: 90,
     adaptiveCap: true,
     maxFrequentRetriesPerDay: 2,

@@ -10,7 +10,7 @@
  *   - 因账号级拒绝没发出去的用户回到池里，由下一个账号联系；对方原因发不出去的不再重试。
  *   - 所有可用账号都在冷却时：等到最早的冷却到期，用该账号试发 1 人，恢复则继续，否则冷却翻倍（上限 maxCooldownMin）。
  *   - 登录失效 / 验证未完成：该账号本次不再使用（unhealthy），其余账号继续。
- * 冷却时长：首次 cooldownMin（默认 30 分钟，2026-10-21 实测测试号触发频繁后至少 18 分钟仍未恢复），之后逐次翻倍。
+ * 冷却时长：首次 cooldownMin（默认 60 分钟。2026-10-21 实测：频繁后 30 分钟内反复试探均被拒；两次“完全安静 60 分钟”后首条即恢复），之后逐次翻倍。
  */
 const { Session } = require('./session');
 const { outreachList } = require('./outreach');
@@ -27,7 +27,7 @@ const isDailyLimit = stop => /DAILY_LIMIT|daily_limit/i.test(stop?.code || '');
 const isFrequent = stop => /FREQUENT|restricted/i.test(stop?.code || '');
 
 async function distribute({ accounts, targets, message, follow = true, dm = true, trace, perTurn = 10,
-  cooldownMin = 30, maxCooldownMin = 120, pacing = DEFAULT_PACING.outreach, onResult = () => {}, sleep = ms => new Promise(r => setTimeout(r, ms)), openSession, runList = outreachList, now: clock = Date.now }) {
+  cooldownMin = 60, maxCooldownMin = 180, pacing = DEFAULT_PACING.outreach, onResult = () => {}, sleep = ms => new Promise(r => setTimeout(r, ms)), openSession, runList = outreachList, now: clock = Date.now }) {
   const queue = accounts.map(account => ({ ...account, state: 'ready', coolUntil: 0, cooldowns: 0, sent: 0 }));
   let pool = [...targets];
   const open = openSession || (account => new Session({ profileDir: account.profileDir, trace }).open());

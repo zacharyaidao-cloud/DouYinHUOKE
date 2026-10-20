@@ -61,7 +61,7 @@ test('精确宽版内置槽及业务升级，保留自定义槽启用选择、AP
   for(const field of ['apiKey','model','batchMode','batchMaxChars','batchMaxCount','requestTimeoutSec'])assert.equal(upgraded.ai[field],snapshot.ai[field]);
   assert.equal(Object.hasOwn(upgraded.ai,'intervalSec'),false);assert.equal(Object.hasOwn(upgraded.ai,'intervalJitter'),false);
   for(const field of ['businessDesc','targetCustomers','clearNeeds','misjudgments'])assert.equal(upgraded.ai[field],store.DEFAULT_SETTINGS.ai[field]);
-  assert.deepEqual(upgraded.keywords,snapshot.keywords);assert.deepEqual(upgraded.action,{userIntervalSec:30,userIntervalJitter:.4,pacingVersion:1});
+  assert.deepEqual(upgraded.keywords,snapshot.keywords);assert.deepEqual(upgraded.action,{userIntervalSec:20,userIntervalJitter:.25,pacingVersion:1});
   assert.equal(upgraded.collect.dailyVideoLimit,17);assert.equal(upgraded.collect.maxScrolls,9);
   assert.equal(upgraded.dm.template,'用户已有话术');assert.equal(upgraded.dm.dailyLimit,13);
   assert.equal(upgraded.outreach.businessId,'customer-business');assert.equal(Object.hasOwn(upgraded.human,'workPeriods'),false);

@@ -47,7 +47,7 @@ test('新marker保存后保留明确设置的零和小数采集间隔',()=>{
 });
 test('新安装使用全新统一动作间隔和三提示词，旧设置迁移保留自定义规则',()=>{
   store.setSettings({}); const fresh=store.getSettings();
-  assert.deepEqual(fresh.action,{userIntervalSec:30,userIntervalJitter:.4,pacingVersion:1});
+  assert.deepEqual(fresh.action,{userIntervalSec:20,userIntervalJitter:.25,pacingVersion:1});
   assert.equal(fresh.collect.scrollIntervalSec,3);assert.equal(fresh.collect.scrollJitter,.4);assert.equal(fresh.collect.linkIntervalSec,10);assert.equal(fresh.collect.linkIntervalJitter,.2);assert.equal(fresh.collect.autoAiAfterCollect,true);
   assert.equal(fresh.ai.apiKey,'');assert.equal(fresh.ai.model,'deepseek-flash');
   assert.equal(fresh.ai.batchMode,'auto');assert.equal(fresh.ai.batchMaxChars,24000);assert.equal(fresh.ai.batchMaxCount,20);
@@ -56,7 +56,7 @@ test('新安装使用全新统一动作间隔和三提示词，旧设置迁移�
   for(const field of ['businessDesc','targetCustomers','clearNeeds','misjudgments']) assert.ok(fresh.ai[field].trim());
   for(const label of ['【用户评论】{需求内容}','【评论时间】{评论时间}','【用户UID】{UID}','【用户名称】{昵称}','【所在视频描述】{视频描述}']) assert.ok(fresh.ai.prompt.includes(label));
   store.setSettings({follow:{intervalMinSec:60,intervalMaxSec:180},dm:{intervalMinSec:90,intervalMaxSec:240},ai:{baseUrl:'https://old-provider.invalid',prompt:'旧行业独立规则',positiveExamples:'明确需求样本',exclusions:'同行广告',ambiguousCases:'不明问题'}});
-  const migrated=store.getSettings();assert.deepEqual(migrated.action,{userIntervalSec:30,userIntervalJitter:.4,pacingVersion:1});
+  const migrated=store.getSettings();assert.deepEqual(migrated.action,{userIntervalSec:20,userIntervalJitter:.25,pacingVersion:1});
   assert.equal(Object.hasOwn(migrated.follow,'intervalMinSec'),false);assert.equal(Object.hasOwn(migrated.dm,'intervalMaxSec'),false);
   assert.equal(migrated.ai.promptPresets[0].prompt,'旧行业独立规则');assert.equal(migrated.ai.clearNeeds,'明确需求样本');assert.equal(migrated.ai.misjudgments,'同行广告\n不明问题');
   assert.equal(migrated.ai.baseUrl,'https://api.deepseek.com');assert.equal(Object.hasOwn(migrated.ai,'exclusions'),false);
@@ -70,7 +70,7 @@ test('首次节奏迁移只重设三组节奏与自动AI，保留API规则话术
   store.setSettings(original);const migrated=store.getSettings();
   assert.deepEqual(original,snapshot);assert.equal(migrated.collect.scrollIntervalSec,3);assert.equal(migrated.collect.scrollJitter,.4);
   assert.equal(migrated.collect.linkIntervalSec,10);assert.equal(migrated.collect.linkIntervalJitter,.2);assert.equal(migrated.collect.autoAiAfterCollect,true);
-  assert.deepEqual(migrated.action,{userIntervalSec:30,userIntervalJitter:.4,pacingVersion:1});
+  assert.deepEqual(migrated.action,{userIntervalSec:20,userIntervalJitter:.25,pacingVersion:1});
   for(const key of ['maxScrolls','dailyVideoLimit','cooldownHours'])assert.equal(migrated.collect[key],original.collect[key]);
   assert.equal(migrated.follow.enabled,false);assert.equal(migrated.follow.dailyLimit,57);assert.equal(migrated.dm.dailyLimit,36);
   assert.equal(migrated.dm.template,original.dm.template);assert.deepEqual(migrated.dm.repeat,original.dm.repeat);

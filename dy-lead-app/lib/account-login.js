@@ -44,8 +44,12 @@ function persistLoginResult(store, accountId, result) {
   store.setAccounts(accounts);
 }
 
+// 检查登录：明确结论即返回；新开窗口最多等 15 秒，已开窗口最多等 5 秒（本人资料响应可能稍后才到）
+const SELF_URL = 'https://www.douyin.com/user/self';
+const DEFINITE = new Set(['authenticated', 'logged_out', 'verification_required', 'browser_closed']);
+
 function createAccountLoginController({ store, taskState, setTask, authorize, launchAccount, getAlive,
-  getMonitor, sleep, maxPolls = 150, pollIntervalMs = 2000 }) {
+  getMonitor, sleep, maxPolls = 150, pollIntervalMs = 2000, checkWaitMs = 15000, existingWaitMs = 5000, checkPollMs = 300 }) {
   function publish(accountId, result, status = result.message) {
     persistLoginResult(store, accountId, result);
     setTask({ loginState: result.state, status, detail: result.message });
@@ -142,15 +146,24 @@ function createAccountLoginController({ store, taskState, setTask, authorize, la
     if (!joiningLogin) setTask({ kind: 'login', running: true, accountId, loginState: 'pending', status: '正在检查账号登录状态…', done: 0, total: 0, errors: [] });
     try {
       let alive = getAlive(accountId);
+      let opened = false;
       if (!alive) {
         alive = await launchAccount(accountId);
         getMonitor(alive);
         await authorize({ accountId, kind: 'check_login_navigate' });
         assertNotStopped();
-        await alive.page.goto('https://www.douyin.com/', { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await sleep(1000);
+        // 实测：首页要 17–36 秒才发出本人资料请求（profile/self），只等 1 秒检查一次几乎总是“待确认”。
+        // 本人主页 /user/self 打开即请求本人资料，再轮询直到有明确结论（最多 checkWaitMs）。
+        await alive.page.goto(SELF_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        opened = true;
       }
-      const result = await inspect(accountId, alive);
+      let result = await inspect(accountId, alive);
+      const deadline = Date.now() + (opened ? checkWaitMs : existingWaitMs);
+      while (!DEFINITE.has(result.state) && Date.now() < deadline) {
+        await sleep(checkPollMs);
+        assertNotStopped();
+        result = await inspect(accountId, alive);
+      }
       publish(accountId, result);
       // ok 表示检查接口调用成功，登录结果独立放在 loggedIn/state 中。
       return { ok: true, ...result };

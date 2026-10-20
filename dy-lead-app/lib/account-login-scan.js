@@ -25,7 +25,8 @@ function publicResult(value) {
 
 function createAccountLoginScan({ store, taskState, setTask, authorize, launchAccount,
   getAlive, getMonitor, getSignal, navigationTimeoutMs = 15000, inspectTimeoutMs = 5000,
-  responseWaitMs = 3000, pollIntervalMs = 250, closeTimeoutMs = 3000 }) {
+  // responseWaitMs：本人主页打开后等待本人资料响应的上限（明确结论即返回）。实测 3 秒常不够，导致启动检查大量“待确认”
+  responseWaitMs = 12000, pollIntervalMs = 250, closeTimeoutMs = 3000 }) {
   return async function scanAccountLogins({ onProgress } = {}) {
     if (taskState.running) return { ok: false, error: '已有任务在运行，启动登录检查稍后进行' };
     const accounts = store.getAccounts().map(account => ({ id: String(account.id) }));

@@ -1381,6 +1381,7 @@ function renderQueueSummary() {
   all.indeterminate = selected > 0 && selected < visible;
   all.disabled = !visible;
   $('btn-link-delete-selected').disabled = !selected;
+  syncForceAll();
   for (const checkbox of $('link-rows').querySelectorAll('[data-link-select]')) {
     const row = linkRows[Number(checkbox.dataset.linkSelect)];
     checkbox.checked = selectedQueueRows.has(row);
@@ -1402,6 +1403,7 @@ function renderLinkRows() {
       <td><button class="normal" data-link-delete="${idx}" aria-label="删除第 ${idx + 1} 组输入">删除</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="5" class="empty-cell">当前分类没有输入，请切换采集状态或添加输入框。</td></tr>';
+  syncForceAll();
 }
 function refreshLinkBadges() {
   const history = collectionHistoryMap();
@@ -1420,12 +1422,33 @@ $('link-rows').addEventListener('input', event => {
   if (event.target.matches('[data-link-index]')) updateLinkUrl(Number(event.target.dataset.linkIndex), event.target.value);
 });
 $('link-rows').addEventListener('change', event => {
-  if (event.target.matches('[data-link-force]')) linkRows[Number(event.target.dataset.linkForce)].force = event.target.checked;
+  if (event.target.matches('[data-link-force]')) { linkRows[Number(event.target.dataset.linkForce)].force = event.target.checked; syncForceAll(); }
   if (event.target.matches('[data-link-select]')) {
     const row = linkRows[Number(event.target.dataset.linkSelect)];
     if (row && String(row.url || '').trim()) event.target.checked ? selectedQueueRows.add(row) : selectedQueueRows.delete(row);
     renderQueueSummary();
   }
+});
+// 强制重采统一处理：表头“全部”作用于当前筛选出的有链接的行；按钮作用于已勾选的行（全部已强制时为取消）
+function syncForceAll() {
+  const rows = queueEntries().filter(({ row }) => String(row.url || '').trim());
+  const box = $('queue-force-all');
+  box.checked = rows.length > 0 && rows.every(({ row }) => row.force);
+  box.indeterminate = !box.checked && rows.some(({ row }) => row.force);
+  const selected = rows.filter(({ row }) => selectedQueueRows.has(row));
+  const button = $('btn-link-force-selected');
+  button.disabled = !selected.length;
+  button.textContent = selected.length && selected.every(({ row }) => row.force) ? `已选取消强制重采（${selected.length}）` : `已选设为强制重采${selected.length ? `（${selected.length}）` : ''}`;
+}
+$('queue-force-all').addEventListener('change', event => {
+  for (const { row } of queueEntries()) if (String(row.url || '').trim()) row.force = event.target.checked;
+  renderLinkRows();
+});
+$('btn-link-force-selected').addEventListener('click', () => {
+  const selected = queueEntries().filter(({ row }) => String(row.url || '').trim() && selectedQueueRows.has(row)).map(({ row }) => row);
+  const value = !selected.every(row => row.force);
+  for (const row of selected) row.force = value;
+  renderLinkRows();
 });
 $('queue-select-all').addEventListener('change', event => {
   for (const { row } of queueEntries()) if (String(row.url || '').trim()) event.target.checked ? selectedQueueRows.add(row) : selectedQueueRows.delete(row);
@@ -1524,6 +1547,14 @@ function filteredSearchResults() {
   const filter = $('search-status-filter').value, history = collectionHistoryMap();
   return ((state && state.searchResults) || []).filter(w => filter === 'all' || collectionCategory(history.get(String(w.awemeId))) === filter);
 }
+// 发布时间：日期 + 距今天数；旧版本搜到的结果没有发布时间显示“—”
+function publishTimeCell(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return '<span class="hint">—</span>';
+  const date = new Date(value * 1000), days = Math.floor((Date.now() - date.getTime()) / 86400000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}<br><span class="hint">${days <= 0 ? '今天' : days + ' 天前'}</span>`;
+}
 function renderSearchResults() {
   const list = filteredSearchResults(), history = collectionHistoryMap();
   const box = $('search-list');
@@ -1537,9 +1568,10 @@ function renderSearchResults() {
       <td class="search-work-text" title="${esc(w.desc || '')}"><span class="field-text-preview">${esc(w.desc || '（无标题）')}</span></td>
       <td>${esc(w.authorName || '')}</td>
       <td>${esc(Number(w.commentCount) || 0)}</td>
+      <td>${publishTimeCell(w.createTime)}</td>
       <td>${w.workType === 'note' ? '<span class="badge b-pending">图文</span>' : '<span class="badge b-intent">视频</span>'}</td>
       <td class="collection-status-cell">${collectionStatusCell(history.get(String(w.awemeId)), collectionCategory(history.get(String(w.awemeId))) === 'unknown' ? '待识别／未核验' : '未采集')}</td>
-    </tr>`).join('') || `<tr><td colspan="7" class="empty-cell">${emptyState('⌕', '当前分类没有搜索结果', '可切换采集状态，或输入关键词开始搜索')}</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="8" class="empty-cell">${emptyState('⌕', '当前分类没有搜索结果', '可切换采集状态，或输入关键词开始搜索')}</td></tr>`;
   renderSearchSelection();
 }
 $('search-select-all').addEventListener('change', event => {
@@ -1578,7 +1610,7 @@ $('btn-search-start').addEventListener('click', async () => {
   const accountId = $('col-account').value;
   if (!accountId) { $('search-feedback').className = 'task-box err'; $('search-feedback').textContent = '请先选择采集账号'; return; }
   try {
-    const r = await api('/search/start', { method: 'POST', body: { accountId, keywords, workType: $('s-type').value, maxPages: checkedNumber('s-maxp', 1, 50, '翻页数'), minCommentCount: checkedNumber('s-minc', 0, 100000, '最少评论数') } });
+    const r = await api('/search/start', { method: 'POST', body: { accountId, keywords, workType: $('s-type').value, maxPages: checkedNumber('s-maxp', 1, 50, '翻页数'), minCommentCount: checkedNumber('s-minc', 0, 100000, '最少评论数'), publishedWithinDays: Number($('s-days').value) } });
     if (r && r.ok) { $('search-feedback').className = 'task-box running'; $('search-feedback').textContent = '搜索任务已启动，进度见下方状态'; }
   } catch (error) {
     $('search-feedback').className = 'task-box err'; $('search-feedback').textContent = error.message || '启动失败';

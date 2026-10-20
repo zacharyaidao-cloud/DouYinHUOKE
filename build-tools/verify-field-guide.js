@@ -116,7 +116,7 @@ assert.match(dictionary.workflow.outreach.entryFlow.evidenceBoundary,/收件人�
 assert.deepEqual(Object.keys(dictionary.workflow.outreach.entryFlow.recipientEvidence), ['protocol', 'explicit_uid', 'dom_profile_name']);
 assert.match(dictionary.workflow.outreach.entryFlow.recipientEvidence.dom_profile_name,/完整昵称一致.*不核对头像或聊天UID.*不等同于平台UID认证/);
 assert.match(dictionary.workflow.outreach.entryFlow.recipient,/所有新建和复用输入框.*完整昵称.*只比较昵称，不核对头像或聊天UID.*保持未发送/);
-assert.match(dictionary.workflow.outreach.entryFlow.privacy,/explicit_uid或dom_profile_name.*不记录实际昵称、UID、头像地址/);
+assert.match(dictionary.workflow.outreach.entryFlow.privacy,/explicit_uid(?:或|\/)dom_profile_name.*不记录实际昵称、UID、头像地址/);
 assert.match(dictionary.workflow.outreach.entryFlow.authorization,/授权与停止.*不重跑.*不增加动作次数/);
 assert.deepEqual(dictionary.workflow.outreach.entryFlow.diagnostics, ['DM_ENTRY_NOT_FOUND', 'DM_ENTRY_AMBIGUOUS', 'DM_ENTRY_CHANGED', 'DM_ENTRY_UNAVAILABLE', 'DM_MESSAGE_LIST_ONLY', 'DM_TARGET_CHAT_NOT_READY', 'DM_RECIPIENT_UNCONFIRMED']);
 assert.match(dictionary.workflow.outreach.entryFlow.manualSend,/自行发送.*可读网页历史.*防重.*冻结重复规则.*不把历史消息伪造/);

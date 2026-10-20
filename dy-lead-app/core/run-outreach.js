@@ -52,6 +52,9 @@ const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
   try {
     await session.open();
     if (!await session.ensureLogin()) throw new Error('未登录');
+    // --start-delay-min：开始前完全不操作的分钟数（用于“安静等待后再试”，判断冷却是否因频繁试发而延长）
+    const startDelay = Math.max(0, Number(arg('start-delay-min')) || 0);
+    if (startDelay) { trace.step('outreach.quiet_wait', { minutes: startDelay }); await session.page.waitForTimeout(startDelay * 60000); }
     let limitedAt = null, probes = 0;
     while (targets.length) {
       const results = await outreachList(session, targets, { follow, dm, message, onResult: save });

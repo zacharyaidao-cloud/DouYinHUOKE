@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 // 只暴露固定控制能力，避免 renderer 取得任意 IPC/文件/命令执行接口。
 contextBridge.exposeInMainWorld('desktop', Object.freeze({
-  version: '2.4.11',
+  version: '2.5.0',
   close: () => ipcRenderer.invoke('desktop:close'),
   minimize: () => ipcRenderer.invoke('desktop:minimize'),
   browser: Object.freeze({

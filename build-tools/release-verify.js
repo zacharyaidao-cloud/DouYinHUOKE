@@ -86,7 +86,8 @@ function runStatic() {
 
   const sourceFiles = [
     ...fs.readdirSync(SRC).filter(name => name.endsWith('.js')).map(name => path.join(SRC, name)),
-    ...fs.readdirSync(path.join(SRC, 'lib')).filter(name => name.endsWith('.js')).map(name => path.join(SRC, 'lib', name))
+    ...fs.readdirSync(path.join(SRC, 'lib')).filter(name => name.endsWith('.js')).map(name => path.join(SRC, 'lib', name)),
+    ...fs.readdirSync(path.join(SRC, 'core')).filter(name => name.endsWith('.js')).map(name => path.join(SRC, 'core', name))
   ];
   let syntaxOk = 0;
   for (const file of sourceFiles) {
@@ -111,7 +112,8 @@ function runStatic() {
 /* -------------------------------------------------------------------- unit */
 // 浏览器 E2E 与普通单测分开跑：UI 用例对时序敏感，和 40 多个文件并行时会因 CPU
 // 争用产生假失败。浏览器批次串行执行，并允许一次重试（仍失败即判失败）。
-const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js']);
+// account-login-scan 含真实 Chromium 用例，并行时同样因 CPU 争用超时，归入串行浏览器批次
+const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js', 'account-login-scan.test.js']);
 function parseTap(output) {
   return {
     tests: Number((/# tests (\d+)/.exec(output) || [])[1] || 0),
@@ -121,7 +123,8 @@ function parseTap(output) {
   };
 }
 function runUnitBatch(files, concurrency) {
-  const result = spawnSync(NODE, ['--test', `--test-concurrency=${concurrency}`, ...files.map(name => path.join('tests', name))], {
+  // 显式 TAP：Node 23+ 非终端默认不再输出 TAP，否则统计为 0 个测试
+  const result = spawnSync(NODE, ['--test', '--test-reporter=tap', `--test-concurrency=${concurrency}`, ...files.map(name => path.join('tests', name))], {
     cwd: SRC, encoding: 'utf8', timeout: Number(args['timeout-unit'] || 15 * 60 * 1000), maxBuffer: 64 * 1024 * 1024
   });
   const output = String(result.stdout || '') + String(result.stderr || '');
@@ -168,6 +171,7 @@ const REQUIRED = [
   'workflow.js', 'lead-query.js', 'license.js', 'config.json', 'trusted-license.json',
   'node.exe', '抖音获客软件.exe', 'web/index.html', 'web/app.js', 'web/style.css',
   'lib/lead-fields.js', 'lib/outreach-browser.js', 'lib/dm-protocol.js', 'lib/browser-runtime.js',
+  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js',
   'node_modules/playwright-core/package.json', 'node_modules/ws/package.json',
   'resources/app/main.js', 'resources/app/preload.js', 'resources/app/account-browser-host.js',
   '使用说明.txt'
@@ -202,6 +206,7 @@ function runArtifact() {
   const watched = [
     ...fs.readdirSync(SRC).filter(name => name.endsWith('.js')).map(name => path.join(SRC, name)),
     ...fs.readdirSync(path.join(SRC, 'lib')).filter(name => name.endsWith('.js')).map(name => path.join(SRC, 'lib', name)),
+    ...fs.readdirSync(path.join(SRC, 'core')).filter(name => name.endsWith('.js')).map(name => path.join(SRC, 'core', name)),
     path.join(SRC, 'web', 'app.js'), path.join(SRC, 'web', 'index.html'),
     path.join(ROOT, 'desktop', 'main.js')
   ];
@@ -268,7 +273,10 @@ function runArtifact() {
     ['lib/dm-protocol.js', 'lib/dm-protocol.js'],
     ['web/app.js', 'web/app.js'],
     ['web/index.html', 'web/index.html'],
-    ['lib/lead-fields.js', 'lib/lead-fields.js']
+    ['lib/lead-fields.js', 'lib/lead-fields.js'],
+    ['core/collect.js', 'core/collect.js'],
+    ['core/search.js', 'core/search.js'],
+    ['core/follow.js', 'core/follow.js']
   ];
   for (const [rel, source] of identical) {
     check('sync:' + rel, sha256(path.join(OUT, rel)) === sha256(path.join(SRC, source)), '发行文件与源码不一致（未重新构建）');

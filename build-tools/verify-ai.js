@@ -22,7 +22,7 @@ const longBody = '本地图文业务内容及操作记录。'.repeat(1700) + '�
 const videos = { [workId]: { id: workId, videoLink: workLink, kind: 'note', awemeType: 68,
   workTitle: title, workContent: longBody, workText: title + '\n' + longBody, desc: title + '\n' + longBody,
   workTextState: 'available', workTextSource: 'api', workCapturedAt: '2026-10-08 12:00:00' } };
-const demands = ['账号停用了，谁处理过？', '路过', '这类情况需要哪些资料？', '同行推广广告，接单加我'];
+const demands = ['账号停用了，谁处理过？', '路过', '这类情况需要哪些资料？', '凑个热闹，随便看看']; // 第4条须是“否”且不被同行预筛拦下（同行预筛另有单测）
 const needByComment = new Map(demands.map((comment, i) => [comment, i % 2 === 0 ? '是' : '否']));
 const requests = [];
 const authorizations = [];

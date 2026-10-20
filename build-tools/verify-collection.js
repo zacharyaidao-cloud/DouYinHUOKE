@@ -145,7 +145,7 @@ function slowWorkHtml(work) {
     };
     // The first real empty-body inspection starts the 200 ms delay below.
     // Also bound the fixture if that inspection never occurs.
-    fallback = setTimeout(window.qaScheduleHydration, 1000);
+    fallback = setTimeout(window.qaScheduleHydration, 8000); // 核心采集打开作品后先停 1–2 秒（实测节奏）再复核登录，兜底须晚于复核
   })()</script></head><body></body></html>`;
 }
 
@@ -156,7 +156,7 @@ function ownProfileHtml() {
 function outreachHtml() {
   return `<!doctype html><html><body>
     ${accountHeader('context-only')}<h1>本地隔离用户主页</h1>
-    <section data-e2e="user-detail"><button id="qa-follow">关注</button><button id="qa-open-dm">私信</button></section>
+    <section data-e2e="user-detail"><button id="qa-follow" data-e2e="user-info-follow-btn">关注</button><button id="qa-open-dm">私信</button></section>
     <div id="qa-conversation" data-e2e="message-panel" style="display:none"><div data-e2e="chat-header"><a href="/user/qa_action_user">本地动作测试用户</a></div><div contenteditable="true" style="min-height:24px"></div><button id="qa-send">发送</button></div>
     <script>
       window.qaActions = { follows: 0, openDm: 0, inputs: 0, sends: 0 };

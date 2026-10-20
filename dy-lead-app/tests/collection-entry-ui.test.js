@@ -93,7 +93,9 @@ test('搜索全选、状态分类、最近采集时间及队列范围', async t 
   await page.waitForFunction(() => !collectSubmitBusy);
   assert.equal(submitted.links.length, 5);
   assert.deepEqual(submitted.links[0], { url: share, force: true });
-  await page.locator('#btn-search-clear').click(); await refreshNow();
+  // 清空按钮先等 /api/search/clear 返回再刷新；测试同样等这次请求完成，避免在清空前刷新（负载高时偶发）
+  await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/search/clear'), page.locator('#btn-search-clear').click()]);
+  await refreshNow();
   assert.equal(await all.isDisabled(), true);
   assert.equal(await all.isChecked(), false);
   assert.equal(await all.evaluate(element => element.indeterminate), false);

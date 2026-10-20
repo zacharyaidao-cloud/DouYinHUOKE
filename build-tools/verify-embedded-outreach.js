@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const assert = require('assert/strict');
 const root = path.resolve(__dirname, '..');
+const CONFIRMED_EVIDENCE = new Set(['protocol', 'dom_profile_name']);
 // 受限环境：系统临时目录可能不可写（Playwright 工件目录创建被拒），重定向到构建目录。
 const QA_TMP = path.join(__dirname, 'qa-tmp');
 fs.mkdirSync(QA_TMP, { recursive: true });
@@ -228,8 +229,9 @@ async function runEngine() {
       assert(lead); assert.equal(source.frame.url(), lead.homepage);
       assert.equal(event.message, engine.applyTemplate(MESSAGE, lead));
       const diagnostic = require(path.join(appDir, 'lib', 'outreach-browser')).getDiagnostic(page);
-      assert.equal(diagnostic.conversationRowEvidence, 'dom_profile_name');
-      assert.equal(diagnostic.recipientEvidence, 'dom_profile_name');
+      // 026b79d 起接收人优先用 IM 协议核验（页面自身历史请求先到时为 protocol），否则用主页昵称核验；两者都是已确认身份，绝不能是 unconfirmed
+      assert(CONFIRMED_EVIDENCE.has(diagnostic.conversationRowEvidence), diagnostic.conversationRowEvidence);
+      assert(CONFIRMED_EVIDENCE.has(diagnostic.recipientEvidence), diagnostic.recipientEvidence);
       recipientEvidence.push({ uid: lead.uid, recipient: diagnostic.recipientEvidence, row: diagnostic.conversationRowEvidence });
       return Array.from(makeSendRequest({ ...protocolOptions(lead), message: event.message }));
     });
@@ -332,8 +334,9 @@ async function runEngine() {
     assert(nativeEvents.every(row => row.trusted === true));
     assert.deepEqual(routeErrors, []); assert.deepEqual(pageErrors, []);
     const diagnostic = require(path.join(appDir, 'lib', 'outreach-browser')).getDiagnostic(page);
-    assert.equal(diagnostic.conversationRowEvidence, 'dom_profile_name');
-    assert.equal(diagnostic.recipientEvidence, 'dom_profile_name');
+    // 026b79d 起接收人优先用 IM 协议核验（页面自身历史请求先到时为 protocol），否则用主页昵称核验；两者都是已确认身份，绝不能是 unconfirmed
+    assert(CONFIRMED_EVIDENCE.has(diagnostic.conversationRowEvidence), diagnostic.conversationRowEvidence);
+    assert(CONFIRMED_EVIDENCE.has(diagnostic.recipientEvidence), diagnostic.recipientEvidence);
     const usage = store.getDailyUsage(ACCOUNT);
     assert.equal(usage.followAttempts, 1); assert.equal(usage.follow, 1); assert.equal(usage.dmAttempts, 2); assert.equal(usage.dm, 2);
     assert.equal(engine.createPlan(ACCOUNT, 'dm', { leadIds: targets.map(lead => lead.id), filters: { f: 'all' } }).count, 0);
@@ -362,7 +365,7 @@ async function runEngine() {
       nativeTrustedEvents: true, noRecipientMixing: true, noAutomaticResend: true,
       defaultReceiptVerifier: true, engineEmbeddedLaunch: true, externalChromiumLaunches: 0,
       historyCheckedBeforeFill: true, taskCompleted: true, internalUserInfoActions: true,
-      listAndChatMountedTogether: true, recipientEvidence: 'dom_profile_name', conversationRowEvidence: 'dom_profile_name',
+      listAndChatMountedTogether: true, recipientEvidence: [...new Set(recipientEvidence.map(row => row.recipient))], conversationRowEvidence: [...new Set(recipientEvidence.map(row => row.row))],
       allowedLegacyNavigations: legacyNavigations, deniedNavigationVariants: 5, externalRedirectBlocked: true, rejectedProxyConnections } });
   } catch (error) {
     error.testDiagnostics = { targets: targets.map((target, index) => ({ ordinal: index + 1,

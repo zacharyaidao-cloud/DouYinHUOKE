@@ -66,7 +66,7 @@ function pageHtml(lead) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>本地触达流程验证</title>
     <style>body{font:16px sans-serif;padding:24px}button,textarea{font:inherit;padding:12px;margin:8px}section{border:1px solid #777;padding:24px}[role=dialog]{padding:24px;border:1px solid #777}textarea{width:500px;height:80px}</style>
     </head><body><header><a href="/user/self">当前账号</a><button id="wrong-header-follow">关注</button></header>
-    <main><section data-e2e="user-info"><h1>本地隔离目标用户</h1><button id="qa-follow"></button><button id="qa-open">私信</button></section>
+    <main><section data-e2e="user-info"><h1>本地隔离目标用户</h1><button id="qa-follow" data-e2e="user-info-follow-btn"></button><button id="qa-open">私信</button></section>
     <aside class="recommend"><button id="wrong-related-follow">关注</button><button id="wrong-related-open">私信</button></aside>
     ${history ? `<div data-e2e="conversation-list" id="qa-message-list" style="display:none"><div role="listitem" data-e2e="conversation-row" data-recipient-sec-uid="${lead.uid}" id="qa-target-row" style="padding:20px;cursor:pointer">本地隔离目标会话</div></div>` : ''}
     <div role="dialog" data-e2e="message-panel" data-recipient-sec-uid="${lead.uid}" id="qa-conversation" style="display:none"><h2>本地隔离会话</h2><textarea aria-label="消息内容"></textarea><button id="qa-send" aria-label="发送消息"><svg width="24" height="24"><path d="M2 2L22 12L2 22Z"></path></svg></button><div role="log" class="message-history"></div></div></main>

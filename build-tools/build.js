@@ -111,6 +111,8 @@ console.log('2) 复制静态资源');
 // Runtime dependencies are explicit; do not include development tools or data.
 copyDir(path.join(SRC, 'web'), path.join(OUT, 'web'));
 copyDir(path.join(SRC, 'lib'), path.join(OUT, 'lib'));
+// 核心流程（core/）与 lib 一样原样发布：其中有序列化进页面执行的函数，不能混淆
+copyDir(path.join(SRC, 'core'), path.join(OUT, 'core'));
 copyDir(path.join(SRC, 'node_modules', 'playwright-core'), path.join(OUT, 'node_modules', 'playwright-core'));
 copyDir(wsDirectory, path.join(OUT, 'node_modules', 'ws'));
 fs.copyFileSync(path.join(SRC, 'node.exe'), path.join(OUT, 'node.exe'));

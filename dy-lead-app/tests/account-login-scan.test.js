@@ -220,6 +220,8 @@ test('实际 Chromium：自动本人页导航只采集浏览器返回的响应�
     };
     try {
       const r = await f.scan();
+      // 扫描对单个窗口的关闭最多等 closeTimeoutMs（产品行为），负载高时 close 事件可能晚到；这里等它真正发生再断言全部关闭
+      for (let i = 0; i < 100 && closeCount.length < scenarios.length; i++) await new Promise(resolve => setTimeout(resolve, 100));
       assert.equal(r.ok, true); assert.equal(r.done, scenarios.length);
       assert.deepEqual(Object.values(r.accountStates).map(item => item.state), scenarios);
       assert.equal(launched.length, scenarios.length); assert.equal(closeCount.length, scenarios.length);

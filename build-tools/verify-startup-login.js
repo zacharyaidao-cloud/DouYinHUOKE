@@ -51,7 +51,7 @@ function pageHtml(scenario) {
       const cachedExe = path.join(cacheDir, 'chrome.exe');
       if (!fs.existsSync(cachedExe) || !fs.existsSync(marker) || fs.readFileSync(marker, 'utf8') !== revision) {
         fs.rmSync(cacheDir, { recursive: true, force: true });
-        fs.cpSync(path.dirname(bundledBrowser), cacheDir, { recursive: true });
+        require('./qa-copy-dir').copyDir(path.dirname(bundledBrowser), cacheDir);
         fs.writeFileSync(marker, revision, 'utf8');
       }
       bundledBrowser = cachedExe;

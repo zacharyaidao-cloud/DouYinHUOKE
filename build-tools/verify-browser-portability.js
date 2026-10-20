@@ -122,7 +122,7 @@ async function worker(scenario, appArg, fixtureArg) {
       const cachedExe = path.join(cacheDir, 'chrome.exe');
       if (!fs.existsSync(cachedExe) || !fs.existsSync(marker) || fs.readFileSync(marker, 'utf8') !== revision) {
         fs.rmSync(cacheDir, { recursive: true, force: true });
-        fs.cpSync(path.dirname(bundledPath), cacheDir, { recursive: true });
+        require('./qa-copy-dir').copyDir(path.dirname(bundledPath), cacheDir);
         fs.writeFileSync(marker, revision, 'utf8');
       }
       return originalLaunch.call(chromium, profile, { ...options, executablePath: cachedExe });

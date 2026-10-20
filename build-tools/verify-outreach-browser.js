@@ -34,7 +34,7 @@ if (!source) {
   const fresh = fs.existsSync(path.join(launchChromiumDir, 'chrome.exe')) && fs.existsSync(cacheMarker) && fs.readFileSync(cacheMarker, 'utf8') === String(revision);
   if (!fresh) {
     fs.rmSync(launchChromiumDir, { recursive: true, force: true });
-    fs.cpSync(shippedChromiumDir, launchChromiumDir, { recursive: true });
+    require('./qa-copy-dir').copyDir(shippedChromiumDir, launchChromiumDir);
     fs.writeFileSync(cacheMarker, String(revision), 'utf8');
   }
 }

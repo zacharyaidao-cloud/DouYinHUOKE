@@ -91,7 +91,7 @@ for(const file of ['dy-lead-app/lib/browser-control-lease.js','desktop/smoke-che
 for(const file of ['dy-lead-app/lib/collection-browser.js','build-tools/verify-embedded-browser.js','build-tools/verify-embedded-outreach.js']) assert(dictionary.sourceFiles.some(entry=>entry.file===file), '缺少内嵌协议与整流程QA摘要：' + file);
 assert.equal(dictionary.defaults.ai.batchMode, 'auto');
 assert.equal(dictionary.defaults.ai.browserIntervalApplies,false);
-assert.deepEqual(dictionary.defaults.action,{userIntervalSec:30,userIntervalJitter:.4,pacingVersion:1});
+assert.deepEqual(dictionary.defaults.action,{userIntervalSec:20,userIntervalJitter:.25,pacingVersion:1});
 assert.deepEqual(dictionary.defaults.human,{maxConsecutiveErrors:3,timeZone:'Asia/Shanghai'});
 assert.equal(dictionary.defaults.collect.scrollIntervalSec,3);assert.equal(dictionary.defaults.collect.scrollJitter,.4);
 assert.equal(dictionary.defaults.collect.linkIntervalSec,10);assert.equal(dictionary.defaults.collect.linkIntervalJitter,.2);

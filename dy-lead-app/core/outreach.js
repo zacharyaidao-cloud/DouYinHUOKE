@@ -82,6 +82,9 @@ async function outreachOneUnsafe(session, target, { follow, dm, message }) {
       await prepared.click();
       await receipt.waitForReceipt({ timeoutMs: 30000 });
       result.dm = { ...receipt.getOutcome(), protocol: receipt.getReceiptSummary() };
+      // 回执本身就是账号级拒绝（频繁 / 今日上限）→ 立即停止整个任务。
+      // 2026-10-21 实测：第 12 条起回执 send=3、check=2（私信操作频繁），旧逻辑漏判继续发了 4 次。
+      if (result.dm.failureScope === 'account') result.stop = { stop: true, code: result.dm.failureCode || 'DM_ACCOUNT_LIMIT', reason: result.dm.reason };
       const feedback = await prepared.readFeedback().catch(() => null);
       if (feedback?.restriction) {
         result.dm.restriction = feedback.restriction;

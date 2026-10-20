@@ -57,7 +57,9 @@ async function follow(page, target, trace, { timeoutMs = 10000 } = {}) {
       userIdIsTarget: json.user_id === undefined ? 'absent' : String(json.user_id) === String(target.uid),
       secUserIdIsTarget: json.sec_user_id === undefined ? 'absent' : json.sec_user_id === target.secUid });
     if (json && json.status_code === 0 && [1, 2].includes(json.follow_status)) settle({ state: 'confirmed_success', evidence: `commit/follow/user status_code=0 follow_status=${json.follow_status}` });
-    else settle({ state: 'confirmed_failure', reason: (json && (json.status_msg || `status_code=${json.status_code}`)) || `HTTP ${response.status()}`, statusCode: json?.status_code });
+    // follow_status=4：对方为私密账号，已发出关注请求（实测）
+    else if (json && json.status_code === 0 && json.follow_status === 4) settle({ state: 'requested', reason: '对方为私密账号，已发出关注请求', evidence: 'commit/follow/user status_code=0 follow_status=4' });
+    else settle({ state: 'confirmed_failure', reason: (json && (json.status_msg || `status_code=${json.status_code} follow_status=${json.follow_status}`)) || `HTTP ${response.status()}`, statusCode: json?.status_code, followStatus: json?.follow_status });
   };
   page.on('request', onRequest); page.on('response', onResponse);
   const timer = setTimeout(() => settle({ state: 'pending_verification', reason: '点击后未收到关注接口回执，需人工核验，禁止自动重试' }), timeoutMs);

@@ -41,7 +41,10 @@ const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
   const all = fs.existsSync(resultsFile) ? JSON.parse(fs.readFileSync(resultsFile, 'utf8')) : [];
   const latest = new Map(); for (const row of all) latest.set(row.secUid, row);
   const settled = new Set([...latest.values()].filter(settledOf).map(row => row.secUid));
-  let targets = JSON.parse(fs.readFileSync(listFile, 'utf8')).filter(row => row.priority === priority && row.secUid && !settled.has(row.secUid));
+  // 以前已关注成功/已请求的人：重发私信时不再点关注
+  const followed = new Set(all.filter(row => ['confirmed_success', 'requested', 'already'].includes(row.follow?.state)).map(row => row.secUid));
+  let targets = JSON.parse(fs.readFileSync(listFile, 'utf8')).filter(row => row.priority === priority && row.secUid && !settled.has(row.secUid))
+    .map(row => followed.has(row.secUid) ? { ...row, skipFollow: true } : row);
   const trace = createTrace(path.join(outDir, 'trace.jsonl'));
   trace.step('outreach.plan', { priority, users: targets.length, follow, dm, alreadySettled: settled.size, probeMinutes, message });
   const session = new Session({ profileDir, trace });
@@ -65,7 +68,7 @@ const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
         trace.step('outreach.cooldown_wait', { minutes: probeMinutes, sinceLimitedMin: Math.round((Date.now() - limitedAt) / 60000), probes, remaining: targets.length });
         await session.page.waitForTimeout(probeMinutes * 60000);
         probes++;
-        const [probe] = await outreachList(session, targets.slice(0, 1), { follow, dm, message, onResult: save });
+        const [probe] = await outreachList(session, targets.slice(0, 1), { follow, dm, message, onResult: row => { save(row); if (['confirmed_success', 'requested'].includes(row.follow?.state)) targets[0] = { ...targets[0], skipFollow: true }; } });
         const minutes = Math.round((Date.now() - limitedAt) / 60000);
         if (probe?.dm?.state === 'confirmed_success') {
           recovered = true;

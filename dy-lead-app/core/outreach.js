@@ -49,8 +49,8 @@ async function outreachOneUnsafe(session, target, { follow, dm, message }) {
   if (platform.stop) { result.stop = platform; return result; }
   if (!profile) { result.follow = result.dm = { state: 'skipped', reason: '未收到目标主页资料响应' }; return result; }
 
-  // b. 关注
-  if (follow) {
+  // b. 关注（本次运行中已关注过的人不再重复点关注：实测频繁期间关注会被静默撤销，反复关注同一人只会加重风控）
+  if (follow && !target.skipFollow) {
     if ([1, 2].includes(profile.follow_status)) result.follow = { state: 'already', reason: '主页响应显示已关注' };
     else result.follow = await followUser(page, target, trace);
     trace.step('outreach.follow', result.follow);

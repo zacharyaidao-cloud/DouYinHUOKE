@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const { TaskStopError } = require('./scheduler');
-const { SEARCH_PATH, parseSearchResponse } = require('./lib/search-works');
+const { SEARCH_PATH, parseSearchBody } = require('./lib/search-works');
 const browserSearch = require('./lib/search-browser-actions');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -108,8 +108,9 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
           const address = new URL(response.url());
           if (!/(^|\.)douyin\.com$/.test(address.hostname)) return;
           if (!SEARCH_PATH.test(address.pathname)) return;
-          const json = await response.json().catch(() => null);
-          const parsed = parseSearchResponse(json);
+          // 用 text() 而不是 json()：综合首页的 stream 接口是多段 JSON，json() 会直接失败
+          const body = await response.text().catch(() => '');
+          const parsed = parseSearchBody(body);
           if (!parsed.ok) return;
           hasMore = parsed.hasMore;
           for (const work of parsed.works) worksBuffer.push(work);

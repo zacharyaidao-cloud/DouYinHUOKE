@@ -137,6 +137,7 @@ function validateSettings(s) {
   for (const [group,fields] of Object.entries({collect:['scrollIntervalSec','cooldownHours','dailyVideoLimit','linkIntervalSec'],action:['userIntervalSec'],follow:['dailyLimit'],dm:['dailyLimit']})) {
     for(const field of fields) if(typeof s[group][field]!=='number'||!Number.isFinite(s[group][field])||s[group][field]<0) throw new Error('设置必须为非负数：'+group+'.'+field);
   }
+  if(s.collect.worksPerAccount!=null&&(!Number.isInteger(s.collect.worksPerAccount)||s.collect.worksPerAccount<1||s.collect.worksPerAccount>200)) throw new Error('每个账号连续采集作品数需为1到200的整数');
   for(const [g,f] of [['collect','maxScrolls'],['ai','batchMaxChars'],['ai','batchMaxCount'],['human','maxConsecutiveErrors']]) if(!Number.isInteger(s[g][f])||s[g][f]<1) throw new Error('设置必须为正整数：'+g+'.'+f);
   for(const [g,f] of [['collect','scrollJitter'],['collect','linkIntervalJitter'],['action','userIntervalJitter']]) if(!Number.isFinite(s[g][f])||s[g][f]<0||s[g][f]>1) throw new Error('抖动比例必须在0到1之间');
   for(const [g,f] of [['collect','scrollIntervalSec'],['collect','linkIntervalSec'],['action','userIntervalSec']]) if(s[g][f]>86400) throw new Error('操作节奏不能超过86400秒');
@@ -396,7 +397,7 @@ async function handleApi(req,res,pathname) {
       return json(res,{ok:true});
     }
   }
-  if(method==='POST'&&pathname==='/api/collect/start') { const b=await readBody(req); requireAccount(b.accountId); startTask(session,()=>engine.collectTask(b.accountId,b.links||b.videoUrls||b.videoUrl)); return json(res,{ok:true,started:true}); }
+  if(method==='POST'&&pathname==='/api/collect/start') { const b=await readBody(req); const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:[b.accountId]; for(const id of ids) requireAccount(id); startTask(session,()=>engine.collectTask(ids.length>1?ids:ids[0],b.links||b.videoUrls||b.videoUrl)); return json(res,{ok:true,started:true}); }
   if(method==='GET'&&pathname==='/api/search/results') return json(res,{ok:true,results:store.getSearchResults()});
   if(method==='GET'&&pathname==='/api/search/keyword-stats') return json(res,{ok:true,rows:require('./lib/keyword-stats').summarizeKeywords(store.getKeywordStats(),store.getLeads(),store.getVideos(),store.getSearchResults())});
   if(method==='GET'&&pathname==='/api/search/draft') return json(res,{ok:true,draft:store.getSearchDraft()});

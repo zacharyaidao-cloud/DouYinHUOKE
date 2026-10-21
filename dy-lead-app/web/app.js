@@ -16,6 +16,13 @@ let leadLoadSequence = 0;
 let refreshBusy = false;
 let resolveVerification = null;
 let linkRows = [{ url: '', force: false }];
+// 勾选“强制重采”时记下时间：暂停后再开始，勾选之后已采完整的作品不再重复强制采集；取消勾选即清除
+function setRowForce(row, value) {
+  if (!row) return;
+  if (value && !row.force) row.forceAt = Date.now();
+  if (!value) delete row.forceAt;
+  row.force = !!value;
+}
 const selectedQueueRows = new Set();
 let pageDirty = true; // 页面刚切换时需要加载表单（轮询期间不覆盖用户正在编辑的内容）
 let lastUserActivity = Date.now();
@@ -301,6 +308,28 @@ function stBadge(st) {
   const [cls, txt] = map[st] || ['b-new', st || '?'];
   return `<span class="badge ${cls}">${txt}</span>`;
 }
+
+/* ---------- 多账号轮换采集：主账号之外勾选的账号 ---------- */
+const collectExtraAccounts = new Set();
+function renderExtraCollectAccounts() {
+  const box = $('col-extra-accounts');
+  if (!box) return;
+  const primary = $('col-account').value;
+  const others = (state.accounts || []).filter(a => String(a.id) !== String(primary));
+  for (const id of [...collectExtraAccounts]) if (!others.some(a => String(a.id) === id)) collectExtraAccounts.delete(id);
+  box.innerHTML = others.length ? others.map(a => `<label><input type="checkbox" data-extra-collect="${esc(a.id)}" ${collectExtraAccounts.has(String(a.id)) ? 'checked' : ''}>${esc(a.name)}<span class="hint">（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</span></label>`).join('')
+    : '<span class="hint">只有一个账号；添加更多账号后可在这里勾选轮换采集</span>';
+}
+function collectAccountIds() {
+  const primary = $('col-account').value;
+  return primary ? [primary, ...[...collectExtraAccounts].filter(id => id !== primary && (state.accounts || []).some(a => String(a.id) === id))] : [];
+}
+$('col-extra-accounts').addEventListener('change', event => {
+  const id = event.target.dataset && event.target.dataset.extraCollect;
+  if (!id) return;
+  if (event.target.checked) collectExtraAccounts.add(id); else collectExtraAccounts.delete(id);
+});
+$('col-account').addEventListener('change', () => renderExtraCollectAccounts());
 
 function fillAccounts(selectId) {
   const sel = $(selectId);
@@ -1422,7 +1451,7 @@ $('link-rows').addEventListener('input', event => {
   if (event.target.matches('[data-link-index]')) updateLinkUrl(Number(event.target.dataset.linkIndex), event.target.value);
 });
 $('link-rows').addEventListener('change', event => {
-  if (event.target.matches('[data-link-force]')) { linkRows[Number(event.target.dataset.linkForce)].force = event.target.checked; syncForceAll(); }
+  if (event.target.matches('[data-link-force]')) { setRowForce(linkRows[Number(event.target.dataset.linkForce)], event.target.checked); syncForceAll(); }
   if (event.target.matches('[data-link-select]')) {
     const row = linkRows[Number(event.target.dataset.linkSelect)];
     if (row && String(row.url || '').trim()) event.target.checked ? selectedQueueRows.add(row) : selectedQueueRows.delete(row);
@@ -1441,13 +1470,13 @@ function syncForceAll() {
   button.textContent = selected.length && selected.every(({ row }) => row.force) ? `已选取消强制重采（${selected.length}）` : `已选设为强制重采${selected.length ? `（${selected.length}）` : ''}`;
 }
 $('queue-force-all').addEventListener('change', event => {
-  for (const { row } of queueEntries()) if (String(row.url || '').trim()) row.force = event.target.checked;
+  for (const { row } of queueEntries()) if (String(row.url || '').trim()) setRowForce(row, event.target.checked);
   renderLinkRows();
 });
 $('btn-link-force-selected').addEventListener('click', () => {
   const selected = queueEntries().filter(({ row }) => String(row.url || '').trim() && selectedQueueRows.has(row)).map(({ row }) => row);
   const value = !selected.every(row => row.force);
-  for (const row of selected) row.force = value;
+  for (const row of selected) setRowForce(row, value);
   renderLinkRows();
 });
 $('queue-select-all').addEventListener('change', event => {
@@ -1629,12 +1658,27 @@ async function loadSearchDraft() {
 for (const id of Object.values(SEARCH_DRAFT_FIELDS)) { $(id).addEventListener('input', saveSearchDraft); $(id).addEventListener('change', saveSearchDraft); }
 
 /* ---------- 关键词统计 ---------- */
+// 勾选状态保存在内存里：表格随轮询重绘时保持勾选
+const selectedStatKeywords = new Set();
+let statKeywords = [];
+function syncKeywordSelection() {
+  for (const keyword of [...selectedStatKeywords]) if (!statKeywords.includes(keyword)) selectedStatKeywords.delete(keyword);
+  const all = $('kw-select-all'), count = selectedStatKeywords.size;
+  all.disabled = !statKeywords.length;
+  all.checked = statKeywords.length > 0 && count === statKeywords.length;
+  all.indeterminate = count > 0 && count < statKeywords.length;
+  $('btn-kw-add-selected').disabled = $('btn-kw-replace-selected').disabled = !count;
+  $('btn-kw-add-selected').textContent = count ? `勾选的 ${count} 个词加入搜索框` : '勾选的词加入搜索框';
+  for (const box of $('kw-stats-list').querySelectorAll('[data-kw-select]')) box.checked = selectedStatKeywords.has(box.dataset.kwSelect);
+}
 function renderKeywordStats(rows) {
   const list = Array.isArray(rows) ? rows : [];
+  statKeywords = list.map(row => String(row.keyword));
   $('kw-stats-count').textContent = list.length ? `共 ${list.length} 个关键词` : '';
-  if (!list.length) { $('kw-stats-list').innerHTML = '<tr><td colspan="12" class="hint">还没有搜索记录（每次搜索后自动统计）</td></tr>'; return; }
+  if (!list.length) { $('kw-stats-list').innerHTML = '<tr><td colspan="13" class="hint">还没有搜索记录（每次搜索后自动统计）</td></tr>'; syncKeywordSelection(); return; }
   const n = value => Number(value) || 0;
   $('kw-stats-list').innerHTML = list.map(row => `<tr>
+    <td class="kw-check"><input type="checkbox" data-kw-select="${esc(row.keyword)}" aria-label="选择关键词 ${esc(row.keyword)}" ${selectedStatKeywords.has(String(row.keyword)) ? 'checked' : ''}></td>
     <td><b>${esc(row.keyword)}</b><div class="hint">${row.fromHistory ? '来自以往搜索结果' : '搜过 ' + n(row.searchCount) + ' 次'}</div></td>
     <td>${esc(row.lastSearchAt || '—')}<div class="hint">${[row.lastPages ? '翻 ' + n(row.lastPages) + ' 页' : '', row.lastPublishedWithinDays ? '近 ' + n(row.lastPublishedWithinDays) + ' 天' : '不限时间'].filter(Boolean).join('｜')}</div></td>
     <td>${n(row.lastTotal)}</td><td>${n(row.lastWithinWeek)}</td><td>${n(row.lastKept)}<div class="hint">新增 ${n(row.lastAdded)}</div></td>
@@ -1642,17 +1686,46 @@ function renderKeywordStats(rows) {
     <td>${n(row.aiDemand)}<span class="hint">（${n(row.aiDemandUsers)} 人）</span></td><td>${n(row.keywordDemand)}</td><td>${n(row.contacted)}</td>
     <td><button class="normal kw-reuse" data-kw="${esc(row.keyword)}" title="把这个词加到搜索关键词输入框">再搜</button></td>
   </tr>`).join('');
+  syncKeywordSelection();
+}
+// 把关键词写入搜索框：mode = 'add'（追加，已有的不重复）或 'replace'（替换）
+function putKeywords(keywords, mode) {
+  const box = $('s-kws');
+  const current = mode === 'replace' ? [] : box.value.split('\n').map(k => k.trim()).filter(Boolean);
+  const merged = [...current];
+  for (const keyword of keywords) if (!merged.includes(keyword)) merged.push(keyword);
+  box.value = merged.join('\n');
+  saveSearchDraft();
+  return merged.length - (mode === 'replace' ? 0 : current.length);
+}
+$('kw-select-all').addEventListener('change', event => {
+  if (event.target.checked) statKeywords.forEach(keyword => selectedStatKeywords.add(keyword)); else selectedStatKeywords.clear();
+  syncKeywordSelection();
+});
+for (const [id, mode] of [['btn-kw-add-selected', 'add'], ['btn-kw-replace-selected', 'replace']]) {
+  $(id).addEventListener('click', () => {
+    const picked = statKeywords.filter(keyword => selectedStatKeywords.has(keyword));
+    if (!picked.length) return;
+    const changed = putKeywords(picked, mode);
+    $('kw-select-msg').textContent = mode === 'replace' ? `搜索框已替换为 ${picked.length} 个关键词` : changed ? `已加入 ${changed} 个关键词` : '勾选的词已都在搜索框里';
+    setTimeout(() => { $('kw-select-msg').textContent = ''; }, 4000);
+    $('s-kws').focus();
+  });
 }
 async function loadKeywordStats() {
   try { renderKeywordStats(((await api('/search/keyword-stats')) || {}).rows); } catch (e) { /* 统计读取失败不打断轮询 */ }
 }
+$('kw-stats-list').addEventListener('change', event => {
+  const keyword = event.target.dataset && event.target.dataset.kwSelect;
+  if (keyword == null) return;
+  if (event.target.checked) selectedStatKeywords.add(keyword); else selectedStatKeywords.delete(keyword);
+  syncKeywordSelection();
+});
 $('kw-stats-list').addEventListener('click', event => {
   const button = event.target.closest('.kw-reuse');
   if (!button) return;
-  const keyword = button.dataset.kw, box = $('s-kws');
-  const current = box.value.split('\n').map(k => k.trim()).filter(Boolean);
-  if (!current.includes(keyword)) { box.value = [...current, keyword].join('\n'); saveSearchDraft(); }
-  box.focus();
+  putKeywords([button.dataset.kw], 'add');
+  $('s-kws').focus();
 });
 $('search-options').addEventListener('toggle', () => { if ($('search-options').open) { loadSearchDraft(); loadKeywordStats(); } });
 
@@ -1710,6 +1783,7 @@ function loadCollectForm() {
   const s = state.settings.collect;
   $('c-col-cooldown').value = s.cooldownHours;
   $('c-col-daily').value = s.dailyVideoLimit;
+  $('c-col-per-account').value = s.worksPerAccount ?? 10;
   $('c-col-max').value = s.maxScrolls;
   $('c-col-skipempty').checked = !!s.skipEmptyText;
   $('c-col-autoai').checked = s.autoAiAfterCollect !== false;
@@ -1718,12 +1792,12 @@ function loadCollectForm() {
 }
 async function saveCollectConfig() {
   const autoJudgeWindowDays = Number($('c-col-aiwindow').value) || 0;
-  const collect = { cooldownHours: checkedNumber('c-col-cooldown', 0, 720, '重采冷却'), dailyVideoLimit: checkedNumber('c-col-daily', 1, 500, '每日作品上限'), maxScrolls: checkedNumber('c-col-max', 10, 500, '翻页轮数'), skipEmptyText: $('c-col-skipempty').checked, autoAiAfterCollect: $('c-col-autoai').checked };
+  const collect = { cooldownHours: checkedNumber('c-col-cooldown', 0, 720, '重采冷却'), dailyVideoLimit: checkedNumber('c-col-daily', 1, 500, '每日作品上限'), worksPerAccount: checkedNumber('c-col-per-account', 1, 200, '每个账号连续采集作品数'), maxScrolls: checkedNumber('c-col-max', 10, 500, '翻页轮数'), skipEmptyText: $('c-col-skipempty').checked, autoAiAfterCollect: $('c-col-autoai').checked };
   await api('/settings', { method: 'PUT', body: { collect, ai: { autoJudgeWindowDays } } });
   Object.assign(state.settings.collect, collect); state.settings.ai.autoJudgeWindowDays = autoJudgeWindowDays; collectConfigDirty = false; renderConfigActions();
   $('col-saved').textContent = '已保存';
 }
-for (const id of ['c-col-cooldown', 'c-col-daily', 'c-col-max', 'c-col-skipempty', 'c-col-autoai', 'c-col-aiwindow']) $(id).addEventListener('input', () => { collectConfigDirty = true; $('col-saved').textContent = ''; renderConfigActions(); });
+for (const id of ['c-col-cooldown', 'c-col-daily', 'c-col-per-account', 'c-col-max', 'c-col-skipempty', 'c-col-autoai', 'c-col-aiwindow']) $(id).addEventListener('input', () => { collectConfigDirty = true; $('col-saved').textContent = ''; renderConfigActions(); });
 $('btn-save-col').addEventListener('click', async () => {
   $('btn-save-col').disabled = true;
   try { await saveCollectConfig(); await refresh(); }
@@ -1734,12 +1808,12 @@ $('btn-collect-start').addEventListener('click', async () => {
   if (collectSubmitBusy) return;
   collectSubmitBusy = true; renderConfigActions();
   try {
-    const links = queueEntries().map(({ row: r }) => ({ url: String(r.url || '').trim(), force: !!r.force })).filter(r => r.url);
+    const links = queueEntries().map(({ row: r }) => ({ url: String(r.url || '').trim(), force: !!r.force, ...(r.force && r.forceAt ? { forceAt: r.forceAt } : {}) })).filter(r => r.url);
     if (!links.length) throw new Error('当前分类没有可采集输入，请添加作品或切换采集状态');
-    const accountId = $('col-account').value; if (!accountId) throw new Error('请先添加并选择采集账号');
+    const accountIds = collectAccountIds(); const accountId = accountIds[0]; if (!accountId) throw new Error('请先添加并选择采集账号');
     setCollectFeedback('pending', collectConfigDirty ? '正在保存采集配置…' : '正在提交作品队列…');
     if (collectConfigDirty) await saveCollectConfig();
-    await api('/collect/start', { method: 'POST', body: { accountId, links } });
+    await api('/collect/start', { method: 'POST', body: { accountId, accountIds, links } });
     setCollectFeedback('submitted', '队列已提交，正在读取进度。完成后按已保存设置处理本次评论用户。');
   } catch (error) { setCollectFeedback('error', error.message || '采集启动未完成'); }
   finally { collectSubmitBusy = false; renderConfigActions(); refresh(); }
@@ -2175,7 +2249,7 @@ async function refresh() {
     accountRefreshError = '';
     actionStateError = '';
     renderOverview(); renderAccounts();
-    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account');
+    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account'); renderExtraCollectAccounts();
     renderActionStatus(); renderSelectionInfo(); renderOutreachControls(); renderWorkflowStatus();
     renderEmbeddedBrowser();
     try { state.videoHistory = ((await api('/videos')) || {}).videos || []; }

@@ -6,6 +6,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+// 2.5.2 起勾选强制重采会带上勾选时间 forceAt（暂停后再开始时据此跳过本轮已采完的作品）：先确认它存在且合理，再按原字段比对
+function withoutForceAt(links) {
+  return links.map(link => {
+    const { forceAt, ...rest } = link;
+    if (rest.force) assert.ok(Number.isFinite(forceAt) && Math.abs(Date.now() - forceAt) < 3600000, '强制重采的行带有勾选时间');
+    else assert.equal(forceAt, undefined, '未勾选强制的行不带勾选时间');
+    return rest;
+  });
+}
 test('搜索全选、状态分类、最近采集时间及队列范围', async t => {
   const app = path.resolve(__dirname, '..');
   const web = process.env.DY_LEAD_QA_WEB_DIR || path.join(app, 'web');
@@ -92,7 +101,7 @@ test('搜索全选、状态分类、最近采集时间及队列范围', async t 
   await page.locator('#btn-collect-start').click();
   await page.waitForFunction(() => !collectSubmitBusy);
   assert.equal(submitted.links.length, 5);
-  assert.deepEqual(submitted.links[0], { url: share, force: true });
+  assert.deepEqual(withoutForceAt(submitted.links)[0], { url: share, force: true });
   // 清空按钮先等 /api/search/clear 返回再刷新；测试同样等这次请求完成，避免在清空前刷新（负载高时偶发）
   await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/search/clear'), page.locator('#btn-search-clear').click()]);
   await refreshNow();
@@ -151,7 +160,7 @@ test('搜索全选、状态分类、最近采集时间及队列范围', async t 
   await page.locator('[data-link-force="2"]').check();
   await page.locator('[data-link-delete="1"]').click();
   await page.locator('#btn-collect-start').click(); await page.waitForFunction(() => !collectSubmitBusy);
-  assert.deepEqual(submitted.links, [{ url: 'https://www.douyin.com/note/102', force: true }], '筛选后删除和重采仍对应原输入');
+  assert.deepEqual(withoutForceAt(submitted.links), [{ url: 'https://www.douyin.com/note/102', force: true }], '筛选后删除和重采仍对应原输入');
   await page.locator('#queue-status-filter').selectOption('unknown');
   assert.equal(await page.locator('.link-input').count(), 1);
   assert.equal(await page.locator('.link-input').inputValue(), share, '短链接与多作品输入不误当未采集');

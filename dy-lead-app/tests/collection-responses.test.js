@@ -927,3 +927,15 @@ test('内嵌第一页还有更多时，后续翻页继续由页面评论接口�
   assert.equal(result.newLeads, 2); assert.equal(result.complete, true);
   assert.equal(f.openings(), 1); assert.equal(f.scrolls(), 1);
 });
+
+test('去重不分采集账号：不同账号采到同一作品的同一条评论只算一条', () => {
+  const engineSource = fs.readFileSync(path.join(__dirname, '..', 'engine.js'), 'utf8');
+  const start = engineSource.indexOf('function dedupeKey('), end = engineSource.indexOf('function matchIntent(', start);
+  const context = { workIdFromLink: require('../lib/video-links').workIdFromLink };
+  vm.runInNewContext(engineSource.slice(start, end), context);
+  const base = { uid: 'MS4wLjABAAAA-same-user', demand: '那你也没有提交任何资料吗', videoLink: 'https://www.douyin.com/note/7325461810767727872' };
+  const a = context.dedupeKey({ ...base, accountId: '1791422419722' });
+  const b = context.dedupeKey({ ...base, accountId: '1792383821775', videoLink: base.videoLink + '?from=share' });
+  assert.equal(a, b);
+  assert.notEqual(a, context.dedupeKey({ ...base, demand: '另一条评论' }));
+});

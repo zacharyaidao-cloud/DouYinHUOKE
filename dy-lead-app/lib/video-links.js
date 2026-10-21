@@ -38,6 +38,7 @@ function mergeLinks(items) {
     const previous = seen.get(key);
     if (previous) {
       previous.force = previous.force || item.force;
+      if (item.forceAt && (!previous.forceAt || item.forceAt > previous.forceAt)) previous.forceAt = item.forceAt;
       // An explicit note URL preserves the image-work route when the same work
       // is also supplied through a generic video/share address.
       if (item.type === 'note') { previous.type = 'note'; previous.url = item.url; }
@@ -53,9 +54,14 @@ function parseVideoLinks(input) {
   const groups = Array.isArray(input) ? input : [input];
   const parsed = [];
   groups.forEach((group, index) => {
-    let raw, force = false;
+    let raw, force = false, forceAt = 0;
     if (typeof group === 'string' || (group == null && !Array.isArray(input))) raw = String(group || '');
-    else if (group && typeof group.url === 'string') { raw = group.url; force = !!group.force; }
+    else if (group && typeof group.url === 'string') {
+      raw = group.url; force = !!group.force;
+      // 勾选“强制重采”的时间：本轮强制重采以它为界，之后已采完整的作品再次开始时不重复强制采集
+      const at = Number(group.forceAt);
+      forceAt = force && Number.isFinite(at) && at > 0 ? at : 0;
+    }
     else throw invalidLink(`第 ${index + 1} 组`, '输入格式不正确');
     if (!raw.trim()) return;
     // Accept common escaped Markdown copied from a message. A textarea can
@@ -68,7 +74,7 @@ function parseVideoLinks(input) {
       const line = text.slice(0, match.index).split(/\r?\n/).length;
       const position = groups.length > 1 ? `第 ${index + 1} 组第 ${line} 行` : `第 ${line} 行`;
       const candidate = match[0].replace(/[.,;:!?)\]}]+$/g, '');
-      parsed.push({ ...normalizeVideoLink(candidate, position), force });
+      parsed.push({ ...normalizeVideoLink(candidate, position), force, ...(forceAt ? { forceAt } : {}) });
     }
   });
   return mergeLinks(parsed);

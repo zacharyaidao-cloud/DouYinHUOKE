@@ -10,6 +10,15 @@ const AI = require('../ai');
 const { filterLeads, aiCategory, contactCategory, aiFacetCounts } = require('../lead-query');
 const { publicLeadFields, projectLead } = require('../lib/lead-fields');
 
+// 2.5.2 起勾选强制重采会带上勾选时间 forceAt（暂停后再开始时据此跳过本轮已采完的作品）：先确认它存在且合理，再按原字段比对
+function withoutForceAt(links) {
+  return links.map(link => {
+    const { forceAt, ...rest } = link;
+    if (rest.force) assert.ok(Number.isFinite(forceAt) && Math.abs(Date.now() - forceAt) < 3600000, '强制重采的行带有勾选时间');
+    else assert.equal(forceAt, undefined, '未勾选强制的行不带勾选时间');
+    return rest;
+  });
+}
 function sourceDefaultSettings() {
   // Read only the literal defaults; requiring store.js would open a data directory.
   const source = fs.readFileSync(path.join(__dirname, '..', 'store.js'), 'utf8');
@@ -873,7 +882,7 @@ test('customer interface uses unified actions, official models and three explici
       await page.locator('#btn-link-add').click(); // genuinely empty row is ignored
       await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/collect/start')), page.locator('#btn-collect-start').click()]);
       const request = requests.filter(r => r.path === '/api/collect/start').at(-1);
-      assert.deepEqual(request.body.links, [
+      assert.deepEqual(withoutForceAt(request.body.links), [
         { url: 'https://www.douyin.com/video/123', force: true },
         { url: 'https://v.douyin.com/mock-short-link/', force: false }
       ]);
@@ -972,7 +981,7 @@ test('customer interface uses unified actions, official models and three explici
       await page.locator('#btn-link-add').focus(); await page.evaluate(() => refresh());
       assert.equal(await page.locator('.link-input').first().inputValue(), shareText);
       await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/collect/start')), page.locator('#btn-collect-start').click()]);
-      assert.deepEqual(requests.filter(r => r.path === '/api/collect/start').at(-1).body.links, [{ url: shareText, force: true }]);
+      assert.deepEqual(withoutForceAt(requests.filter(r => r.path === '/api/collect/start').at(-1).body.links), [{ url: shareText, force: true }]);
       assert.match(await page.locator('#page-collect').textContent(), /强制重采应用于该输入框中的所有作品/);
     });
 

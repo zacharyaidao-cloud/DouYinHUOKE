@@ -517,9 +517,16 @@ body.browser-workspace .content { padding-bottom:16px; }
 #collect-entry .link-number { text-align:center; color:#57657a; font-variant-numeric:tabular-nums; }
 #collect-entry [data-link-delete] { min-height:22px; margin:0; padding:0; border:0; background:transparent; color:#b32424; }
 .search-results-wrap { max-height:360px; }
+.multi-collect-row { flex-wrap:wrap; gap:8px 14px; }
+.multi-collect-label { font-weight:600; }
+.multi-collect-accounts { display:inline-flex; flex-wrap:wrap; gap:6px 14px; }
+.multi-collect-accounts label { display:inline-flex; align-items:center; gap:4px; font-weight:normal; }
+.multi-collect-turn input { width:70px; margin:0 6px; }
 .kw-stats-wrap { max-height:300px; margin-bottom:12px; }
 .kw-stats-wrap table { min-width:1100px; }
 .kw-stats-wrap td { vertical-align:top; }
+.kw-stats-wrap th.kw-check, .kw-stats-wrap td.kw-check { width:64px; white-space:nowrap; }
+.kw-stats-actions { gap:8px; }
 .search-results-wrap table { min-width:1000px; }
 .collection-first-line,.collection-last-time { display:block; min-height:22px; line-height:22px; white-space:nowrap; }
 .collection-last-time { font-variant-numeric:tabular-nums; }

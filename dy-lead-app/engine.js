@@ -289,7 +289,8 @@ function dedupeKey(l) {
   // Older history may store a generic video URL for an image work. The work ID
   // also removes stale share queries, so revisiting its note URL cannot create
   // duplicate comments merely because its renderer or address changed.
-  return [l.accountId, workIdFromLink(l.videoLink) || l.videoLink, l.uid, (l.demand || l.nickname || '').trim()].join('||');
+  // 不含采集账号：多个账号采到同一作品的同一条评论只保留一行（先采到的账号为归属），避免重复线索与 AI 重复判断。
+  return [workIdFromLink(l.videoLink) || l.videoLink, l.uid, (l.demand || l.nickname || '').trim()].join('||');
 }
 
 function matchIntent(text, keywords) {
@@ -1112,7 +1113,7 @@ const { createCoreCollectOne } = require('./engine-core-collect');
 const collectOneCore = createCoreCollectOne({ store, workflow, setTask, legacyCollectOne: collectOne, dedupeKey, matchIntent, checkPageHealth: checkAccountPageHealth, fmtTs });
 const collectionTasks = createCollectionTasks({
   store, taskState, setTask, failTask, makeScheduler, checkpoint, parseVideoList,
-  getAlive, launchAccount, collectOne: collectOneCore, runAi: options => aiTask(options)
+  getAlive, launchAccount, collectOne: collectOneCore, runAi: options => aiTask(options), closeAccount: id => closeAccount(id)
 });
 const { createSearchTasks } = require('./engine-search-tasks');
 const searchTasks = createSearchTasks({

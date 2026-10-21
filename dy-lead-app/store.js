@@ -102,7 +102,7 @@ const WIDE_V2211_BUILTIN_BUSINESS = {
 const DEFAULT_INDUSTRY_PROMPT = '业务范围：亚马逊账户申诉、激活、解封、资金解冻。结合公司业务和目标客户判断。\n' + CONTACT_POLICY + '\n只输出“是/否”及不超过30字符的简短理由，不输出评分或待确认。\n\n' + CONTEXT_TEMPLATE;
 const DEFAULT_SETTINGS = {
   collect: {
-    scrollIntervalSec: 3, scrollJitter: 0.4, maxScrolls: 120, cooldownHours: 24, dailyVideoLimit: 240,
+    scrollIntervalSec: 3, scrollJitter: 0.4, maxScrolls: 120, cooldownHours: 24, dailyVideoLimit: 240, worksPerAccount: 10,
     skipEmptyText: true,
     linkIntervalSec: 10, linkIntervalJitter: 0.2, autoAiAfterCollect: true
   },

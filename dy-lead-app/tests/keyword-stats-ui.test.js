@@ -15,8 +15,8 @@ test('搜索关键词重启后恢复、输入自动保存；关键词统计表�
   const context = { ...require('../lib/ai-policy'), ...require('../lib/keyword-screen') };
   context.DEFAULT_INDUSTRY_PROMPT = vm.runInNewContext('(' + source.match(/const DEFAULT_INDUSTRY_PROMPT = ([\s\S]*?);\r?\nconst DEFAULT_SETTINGS/)[1] + ')', context);
   const settings = JSON.parse(JSON.stringify(vm.runInNewContext('(' + source.match(/const DEFAULT_SETTINGS = ([\s\S]*?);\r?\n\r?\nfunction getAccounts/)[1] + ')', context)));
-  const snapshot = { ok: true, accounts: [{ id: '1', name: '模拟账号', loginStatus: 'authenticated', daily: {} }], settings, stats: {}, task: { running: false }, videos: {}, license: {}, loginUser: 'qa' };
-  const drafts = [];
+  const snapshot = { ok: true, accounts: [{ id: '1', name: '模拟账号', loginStatus: 'authenticated', daily: {} }, { id: '2', name: '第二个号', loginStatus: 'authenticated', daily: {} }, { id: '3', name: '第三个号', loginStatus: 'authenticated', daily: {} }], settings, stats: {}, task: { running: false }, videos: {}, license: {}, loginUser: 'qa' };
+  const drafts = []; let collectStart = null;
   const stored = { keywords: '亚马逊扫号\n亚马逊申诉服务商', workType: 'note', minComments: '20', publishedWithinDays: '7', maxPages: '50' };
   const rows = [
     { keyword: '亚马逊扫号', searchCount: 2, lastSearchAt: '2026-10-21 10:00:00', lastTotal: 120, lastWithinWeek: 18, lastKept: 25, lastAdded: 9, lastPages: 50,
@@ -42,9 +42,11 @@ test('搜索关键词重启后恢复、输入自动保存；关键词统计表�
     if (pathname === '/api/search/draft' && req.method() === 'GET') response.draft = stored;
     if (pathname === '/api/search/draft' && req.method() === 'POST') drafts.push(req.postDataJSON());
     if (pathname === '/api/search/keyword-stats') response.rows = rows;
+    if (pathname === '/api/collect/start') collectStart = req.postDataJSON();
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(response) });
   });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
+  page.on('dialog', dialog => dialog.accept());
   await page.addInitScript(() => sessionStorage.setItem('dy_token', 'local-qa'));
   await page.goto('https://keyword-stats.test/');
   await page.waitForFunction(() => document.getElementById('login-layer').style.display === 'none' && !refreshBusy);
@@ -85,5 +87,28 @@ test('搜索关键词重启后恢复、输入自动保存；关键词统计表�
   await page.evaluate(() => refresh());
   await page.waitForFunction(() => !refreshBusy);
   assert.equal(await page.locator('#s-kws').inputValue(), '亚马逊扫号\n亚马逊账户被停用\n<b>注入</b>');
+
+  // 6. 勾选 / 全选关键词后统一加入或替换搜索框；轮询重绘后勾选保持
+  assert.equal(await page.locator('#btn-kw-add-selected').isDisabled(), true);
+  await page.locator('#kw-select-all').check();
+  await page.evaluate(() => refresh()); await page.waitForFunction(() => !refreshBusy);
+  assert.equal(await page.locator('#kw-stats-list [data-kw-select]:checked').count(), 2, '重绘后仍是全选');
+  await page.locator('#btn-kw-replace-selected').click();
+  assert.equal(await page.locator('#s-kws').inputValue(), '亚马逊扫号\n<b>注入</b>');
+  await page.locator('#kw-select-all').uncheck();
+  await page.locator('#kw-stats-list [data-kw-select]').first().check();
+  assert.equal(await page.locator('#kw-select-all').evaluate(el => el.indeterminate), true);
+  await page.locator('#s-kws').fill('亚马逊协议3');
+  await page.locator('#btn-kw-add-selected').click();
+  assert.equal(await page.locator('#s-kws').inputValue(), '亚马逊协议3\n亚马逊扫号');
+
+  // 7. 多账号轮换采集：主账号之外可勾选其他账号，开始采集时一并提交
+  assert.equal(await page.locator('#col-extra-accounts [data-extra-collect]').count(), 2);
+  await page.locator('#col-extra-accounts [data-extra-collect="3"]').check();
+  await page.locator('.link-input').first().fill('https://www.douyin.com/video/7693378601286309625');
+  await page.locator('#btn-collect-start').click();
+  await page.waitForFunction(() => !collectSubmitBusy);
+  assert.deepEqual(collectStart.accountIds, ['1', '3']);
+  assert.equal(collectStart.accountId, '1');
   assert.deepEqual(errors, []);
 });

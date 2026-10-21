@@ -101,7 +101,7 @@ function createCoreCollectOne({ store, workflow, setTask, legacyCollectOne, dedu
     } catch (_) { /* 页面已离开或读取失败：保留接口资料 */ }
     const authorSecUid = (store.getVideos()[work.id] || {}).authorSecUid || '';
 
-    // 写线索：沿用旧流程的字段与去重规则（dedupeKey = 账号+作品+用户+评论文本）
+    // 写线索：沿用旧流程的字段与去重规则（dedupeKey = 作品+用户+评论文本，不分采集账号）
     const leads = store.getLeads();
     const seen = new Map(leads.map(lead => [dedupeKey(lead), lead]));
     let maxId = leads.reduce((max, lead) => Math.max(max, Number(lead.id) || 0), 0);

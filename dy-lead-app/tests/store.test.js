@@ -146,3 +146,19 @@ test('损坏数据文件会明确报错，不会静默返回空库覆盖原数�
   assert.throws(()=>store.setSettings({...store.getSettings(),keywords:{intent:['新增词'],exclude:[]}}),/读取失败/);
   assert.equal(fs.readFileSync(store.F.settings,'utf8'),bytes);
 });
+
+test('私信节奏迁移：老设置升级为每 5 条休息 5 分钟、多号每号 5 人一轮后休息 5 分钟、频繁 30 分钟起；迁移后保留自定义值', () => {
+  const old = { dm: { sessionPause: { count: 10, pauseMinSec: 3300, pauseMaxSec: 3600 }, frequentCooldownSec: 3600, batchPerAccount: 10, accountSwitchIntervalSec: 90, maxFrequentRetriesPerDay: 2, dailyLimit: 33 } };
+  const upgraded = store.normalizeSettings(old);
+  assert.deepEqual(upgraded.dm.sessionPause, { count: 5, pauseMinSec: 300, pauseMaxSec: 300 });
+  assert.equal(upgraded.dm.frequentCooldownSec, 1800);
+  assert.equal(upgraded.dm.batchPerAccount, 5);
+  assert.equal(upgraded.dm.roundRestSec, 300);
+  assert.equal(upgraded.dm.accountSwitchIntervalSec, 0);
+  assert.equal(upgraded.dm.maxFrequentRetriesPerDay, 3);
+  assert.equal(upgraded.dm.dailyLimit, 33, '额度等非节奏字段不动');
+  assert.equal(upgraded.dm.pacingVersion, 2);
+  const custom = store.normalizeSettings({ dm: { ...upgraded.dm, sessionPause: { count: 8, pauseMinSec: 400, pauseMaxSec: 500 }, batchPerAccount: 7 } });
+  assert.deepEqual(custom.dm.sessionPause, { count: 8, pauseMinSec: 400, pauseMaxSec: 500 });
+  assert.equal(custom.dm.batchPerAccount, 7);
+});

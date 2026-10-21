@@ -29,7 +29,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
     for (const [id, entry] of Object.entries(raw || {})) {
       if (!entry || typeof entry !== 'object') continue;
       const next = { ...entry };
-      if (next.opDay !== opDay) { next.opDay = opDay; next.frequentCountToday = 0; next.frequentUntil = null; next.disabledUntil = null; }
+      if (next.opDay !== opDay) { next.opDay = opDay; next.frequentCountToday = 0; next.frequentStreak = 0; next.dmAtFrequent = null; next.frequentUntil = null; next.disabledUntil = null; }
       if (next.disabledUntil && Number(next.disabledUntil) <= now) next.disabledUntil = null;
       if (next.frequentUntil && Number(next.frequentUntil) <= now) next.frequentUntil = null;
       out[id] = next;
@@ -68,22 +68,23 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
   function markFrequent(state, accountId, settings, opDay, now) {
     const entry = state[String(accountId)] || (state[String(accountId)] = {});
     const sentToday = Math.max(0, Number(store.getDailyUsage(accountId).dm) || 0);
-    // 冷却结束后一条都没发出去就又频繁（冷却后首条即被拒）：平台的“当日额度”与“频繁”回执相同，按今日上限停用。
-    // 2026-10-21 实测：当日约 30 条后安静 3.5 小时仍是同一回执，继续每小时试探只会延长限制。
-    // （冷却期内账号不会被派发，所以同一天的再次频繁一定发生在冷却之后）
-    const noProgressAfterCooldown = entry.opDay === opDay && Number(entry.frequentCountToday) > 0
-      && entry.dmAtFrequent != null && Number.isFinite(Number(entry.dmAtFrequent)) && sentToday <= Number(entry.dmAtFrequent);
+    // 连续频繁：上次频繁后一条都没发出去就又频繁（= 冷却到点试发仍被拒）。期间发出过私信说明已恢复，阶梯从头算。
+    // 阶梯：30 分钟 → 1 小时 → 2 小时（cooldownFor：基准 × 2^n，封顶 2 小时）；连续试发 maxFrequentRetriesPerDay（默认 3）次仍频繁 → 今日停用。
+    // 平台的“当日额度”与“频繁”回执相同（2026-10-21 实测），所以连续多次仍频繁按今日上限处理。
+    const consecutive = entry.opDay === opDay && Number(entry.frequentStreak) > 0 && entry.dmAtFrequent != null && sentToday <= Number(entry.dmAtFrequent);
     entry.opDay = opDay;
     entry.frequentCountToday = (Number(entry.frequentCountToday) || 0) + 1;
-    entry.frequentUntil = now + signals.cooldownFor(settings.dm.frequentCooldownSec, entry.frequentCountToday - 1) * 1000;
+    entry.frequentStreak = consecutive ? Number(entry.frequentStreak) + 1 : 1;
     entry.dmAtFrequent = sentToday;
-    entry.lastStopReason = '平台提示操作频繁';
-    if (noProgressAfterCooldown) {
+    const retries = entry.frequentStreak - 1; // 冷却到点后试发仍频繁的次数
+    const maxRetries = Math.max(0, Number(settings.dm.maxFrequentRetriesPerDay ?? 3));
+    if (retries >= maxRetries) {
+      entry.frequentUntil = null;
       entry.disabledUntil = store.nextResetMs();
-      entry.lastStopReason = '冷却后首条仍频繁，按今日上限停用';
-    } else if (entry.frequentCountToday > Math.max(0, Number(settings.dm.maxFrequentRetriesPerDay) || 2)) {
-      entry.disabledUntil = store.nextResetMs();
-      entry.lastStopReason = '频繁次数超限，今日停用';
+      entry.lastStopReason = `频繁后试发 ${retries} 次仍频繁，按今日上限停用`;
+    } else {
+      entry.frequentUntil = now + signals.cooldownFor(settings.dm.frequentCooldownSec, retries) * 1000;
+      entry.lastStopReason = '平台提示操作频繁';
     }
   }
   function markDailyLimit(state, accountId, settings, opDay) {
@@ -360,7 +361,7 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
           await closePrevious(accountId);
           // 账号切换间隔（首个账号不等待）
           if (progressed) {
-            const base = Math.max(10, Number(settings.dm.accountSwitchIntervalSec) || 90);
+            const base = Math.max(0, Number(settings.dm.accountSwitchIntervalSec ?? 0));
             const gap = Math.round(base * (1 + (Math.random() * 0.6 - 0.3)) * 1000);
             setTask({ stage: 'waiting_account', status: `账号切换间隔，剩余 ${Math.ceil(gap / 1000)} 秒，可随时停止`, waitingUntil: new Date(now() + gap).toISOString() });
             const until = now() + gap;
@@ -449,7 +450,21 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
           publish({ done: summary.done, success: summary.success, followCount: summary.followCount, pending: summary.pending, failed: summary.failed, skipped: summary.skipped, perAccount: summary.perAccount, unassigned: unassigned.length });
           checkpoint({ state: 'running', distributionSummary: { ...summary }, stopReason: '' });
         }
-        // 一轮结束：没有任何账号能执行时，若仍有账号只是频繁冷却则等它恢复，否则结束
+        // 一轮结束：所有可用号都发过一批 → 统一休息 roundRestSec（默认 5 分钟）再开始下一轮；单号即每批后休息
+        const roundRestMs = Math.max(0, Number(settings.dm.roundRestSec ?? 300)) * 1000;
+        if (progressed && roundRestMs && remainingCount() > 0) {
+          await closePrevious('');
+          const until = now() + roundRestMs;
+          store.log(String(pool[0].accountId), `私信分发：本轮各账号已发完一批，统一休息 ${Math.round(roundRestMs / 60000)} 分钟后开始下一轮，剩余 ${remainingCount()} 人`);
+          while (now() < until) {
+            const sec = Math.ceil((until - now()) / 1000);
+            setTask({ stage: 'waiting_round', status: `本轮已完成，休息 ${sec >= 60 ? Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒' : sec + ' 秒'}后开始下一轮（剩余 ${remainingCount()} 人），可随时停止`, waitingUntil: new Date(until).toISOString() });
+            if (stopped()) throw new TaskStopError('已手动停止，剩余用户保留待分配');
+            await sleep(Math.min(1000, until - now()));
+          }
+          setTask({ waitingUntil: null });
+        }
+        // 没有任何账号能执行时，若仍有账号只是频繁冷却则等它恢复，否则结束
         if (!progressed) {
           const resumeAt = cooldownResumeAt();
           if (!resumeAt) break;

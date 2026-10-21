@@ -60,7 +60,9 @@ try {
   assert.equal(settings.collect.maxScrolls, 120);
   assert.equal(settings.follow.dailyLimit, 150);
   assert.equal(settings.dm.dailyLimit, 150);
-  assert.deepEqual(settings.dm.sessionPause, { count: 10, pauseMinSec: 3300, pauseMaxSec: 3600 });
+  // 2026-10-21 用户确认的私信节奏
+  assert.deepEqual(settings.dm.sessionPause, { count: 5, pauseMinSec: 300, pauseMaxSec: 300 });
+  assert.deepEqual([settings.dm.batchPerAccount, settings.dm.roundRestSec, settings.dm.accountSwitchIntervalSec, settings.dm.frequentCooldownSec, settings.dm.maxFrequentRetriesPerDay, settings.dm.pacingVersion], [5, 300, 0, 1800, 3, 2]);
   assert.deepEqual(settings.search, { enabled: true, intervalSec: 20, intervalJitter: .3, maxPages: 20, dailySearchLimit: 30, minCommentCount: 0, publishedWithinDays: 30 });
   assert.equal(settings.ai.promptPresets.length, 3);
   assert.equal(settings.ai.activePromptId, 'prompt-1');

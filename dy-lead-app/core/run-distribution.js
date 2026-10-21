@@ -3,7 +3,7 @@
  * 核心流程 · 多账号轮换触达入口
  *
  *   node core/run-distribution.js --accounts=名称1=资料目录1,名称2=资料目录2 --list=<名单.json> --out=<输出目录>
- *        --message=<话术> [--priority=R2] [--per-turn=10] [--rest-min=60] [--cooldown-min=60] [--follow=1] [--dm=1] [--dry-run=1]
+ *        --message=<话术> [--priority=R2] [--per-turn=5] [--round-rest-min=5] [--ladder=30,60,120] [--follow=1] [--dm=1] [--dry-run=1]
  *
  * 每个账号一个浏览器资料目录（先用 core/run-login.js 扫码登录过）。
  * 结果写入 results.json（含 accountId）；已有定论的用户再次运行时跳过，账号级拒绝的用户会重新入池。
@@ -17,7 +17,7 @@ const arg = name => (process.argv.find(value => value.startsWith(`--${name}=`)) 
 const accounts = arg('accounts').split(',').filter(Boolean).map(item => { const [name, ...dir] = item.split('='); return { id: name, name, profileDir: dir.join('=') }; });
 const listFile = arg('list'), outDir = arg('out'), message = arg('message').trim(), priority = arg('priority');
 if (!accounts.length || accounts.some(a => !a.profileDir) || !listFile || !outDir || !message) {
-  console.error('用法：node core/run-distribution.js --accounts=名称=资料目录,... --list=<名单.json> --out=<输出目录> --message=<话术> [--priority=] [--per-turn=10] [--cooldown-min=30]');
+  console.error('用法：node core/run-distribution.js --accounts=名称=资料目录,... --list=<名单.json> --out=<输出目录> --message=<话术> [--priority=] [--per-turn=5] [--round-rest-min=5] [--ladder=30,60,120]');
   process.exit(2);
 }
 
@@ -33,8 +33,9 @@ if (!accounts.length || accounts.some(a => !a.profileDir) || !listFile || !outDi
   const trace = createTrace(path.join(outDir, 'trace.jsonl'));
   try {
     await distribute({ accounts, targets, message, trace, follow: arg('follow') !== '0', dm: arg('dm') !== '0',
-      perTurn: Math.max(1, Number(arg('per-turn')) || 10), cooldownMin: Math.max(1, Number(arg('cooldown-min')) || 60),
-      restMin: arg('rest-min') === '' ? 60 : Math.max(0, Number(arg('rest-min')) || 0), history: all,
+      perTurn: Math.max(1, Number(arg('per-turn')) || 5),
+      roundRestMin: arg('round-rest-min') === '' ? 5 : Math.max(0, Number(arg('round-rest-min')) || 0),
+      frequentLadderMin: arg('ladder') ? arg('ladder').split(',').map(Number).filter(n => n > 0) : [30, 60, 120], history: all,
       onResult: row => { all.push({ ...row, at: new Date().toISOString() }); fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8'); } });
   } catch (error) { trace.step('dist.error', { message: error.message }); }
 })();

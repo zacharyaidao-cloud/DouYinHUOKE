@@ -145,13 +145,13 @@ function validateSettings(s) {
   if(![0,1,3,7].includes(autoJudgeWindowDays)) throw new Error('采集后自动AI判断的评论时间范围只允许全部、1天、3天或7天');
   if(s.action.pacingVersion!==1) throw new Error('请刷新后使用新版任务节奏设置');
   if(!Number.isFinite(s.dm.repeat.intervalDays)||s.dm.repeat.intervalDays<1) throw new Error('重复私信间隔至少为1天');
-  const sp={count:10,pauseMinSec:3300,pauseMaxSec:3600,...(s.dm&&s.dm.sessionPause||{})};
+  const sp={count:5,pauseMinSec:300,pauseMaxSec:300,...(s.dm&&s.dm.sessionPause||{})};
   if(!sp||!Number.isInteger(sp.count)||sp.count<1||sp.count>200) throw new Error('私信强制休息的条数需为1到200的整数');
   for(const f of ['pauseMinSec','pauseMaxSec']) if(!Number.isFinite(sp[f])||sp[f]<5||sp[f]>86400) throw new Error('私信强制休息时长需在5到86400秒之间');
   if(sp.pauseMinSec>sp.pauseMaxSec) throw new Error('私信强制休息的最小时长不能超过最大时长');
-  const dmd={adaptiveCap:true,frequentCooldownSec:3600,accountSwitchIntervalSec:90,batchPerAccount:10,maxFrequentRetriesPerDay:2,sameVideoPerBatch:2,dailyResetHour:8,poolAccounts:[],...(s.dm||{})};
+  const dmd={adaptiveCap:true,frequentCooldownSec:1800,accountSwitchIntervalSec:0,batchPerAccount:5,roundRestSec:300,maxFrequentRetriesPerDay:3,sameVideoPerBatch:2,dailyResetHour:8,poolAccounts:[],...(s.dm||{})};
   if(typeof dmd.adaptiveCap!=='boolean') throw new Error('经验上限开关必须为布尔值');
-  for(const [f,min,max,label] of [['frequentCooldownSec',300,7200,'频繁冷却'],['accountSwitchIntervalSec',10,3600,'账号切换间隔'],['batchPerAccount',1,50,'每批人数'],['maxFrequentRetriesPerDay',0,10,'频繁重试上限'],['sameVideoPerBatch',1,20,'同视频每批上限'],['dailyResetHour',0,23,'每日恢复时刻']]) {
+  for(const [f,min,max,label] of [['frequentCooldownSec',300,7200,'频繁冷却'],['accountSwitchIntervalSec',0,3600,'账号切换间隔'],['batchPerAccount',1,50,'每批人数'],['roundRestSec',0,7200,'每轮休息'],['maxFrequentRetriesPerDay',0,10,'频繁重试上限'],['sameVideoPerBatch',1,20,'同视频每批上限'],['dailyResetHour',0,23,'每日恢复时刻']]) {
     if(!Number.isFinite(dmd[f])||dmd[f]<min||dmd[f]>max) throw new Error('私信分发设置无效：'+label);
   }
   if(!Number.isInteger(dmd.batchPerAccount)||!Number.isInteger(dmd.maxFrequentRetriesPerDay)||!Number.isInteger(dmd.sameVideoPerBatch)||!Number.isInteger(dmd.dailyResetHour)) throw new Error('私信分发设置需为整数');

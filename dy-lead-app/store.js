@@ -116,15 +116,18 @@ const DEFAULT_SETTINGS = {
     repeat: { enabled: false, intervalDays: 7 },
     // 2026-10-21 实测：单账号约 11–12 条陌生人私信/10 分钟即触发“频繁”，完全安静约 60 分钟后恢复。
     // 默认每发 10 条休息 55–60 分钟，主动避开频繁；多账号时由账号轮换消化这段休息。
-    sessionPause: { count: 10, pauseMinSec: 3300, pauseMaxSec: 3600 },
+    // 2026-10-21 用户确认的节奏：单号每发 5 条休息 5 分钟
+    sessionPause: { count: 5, pauseMinSec: 300, pauseMaxSec: 300 },
     // 多账号私信分发（v2 设计）
     poolAccounts: [],
-    frequentCooldownSec: 3600, // 触发频繁后至少安静 60 分钟再试（实测 30 分钟内反复试探均被拒）
+    // 触发频繁后暂停：30 分钟 → 仍频繁 1 小时 → 仍频繁 2 小时（基准 × 2^n，封顶 2 小时）；计时从触发时刻开始
+    frequentCooldownSec: 1800,
     dailyResetHour: 8,
-    batchPerAccount: 10,
-    accountSwitchIntervalSec: 90,
+    batchPerAccount: 5, // 多号：每号每轮 5 人后立即切换下一个号
+    roundRestSec: 300, // 多号：所有号都发过一轮后统一休息 5 分钟（单号同样每轮休息）
+    accountSwitchIntervalSec: 0,
     adaptiveCap: true,
-    maxFrequentRetriesPerDay: 2,
+    maxFrequentRetriesPerDay: 3, // 频繁后连续试发 3 次仍频繁 → 按今日上限停用
     sameVideoPerBatch: 2
   },
   search: {
@@ -179,7 +182,7 @@ function normalizeSettings(s = {}) {
   merged.dm.repeat = { ...DEFAULT_SETTINGS.dm.repeat, ...(s.dm && s.dm.repeat || {}) };
   merged.dm.sessionPause = { ...DEFAULT_SETTINGS.dm.sessionPause, ...(s.dm && s.dm.sessionPause || {}) };
   // 多账号分发设置归一化
-  for (const field of ['frequentCooldownSec', 'dailyResetHour', 'batchPerAccount', 'accountSwitchIntervalSec', 'maxFrequentRetriesPerDay', 'sameVideoPerBatch']) {
+  for (const field of ['frequentCooldownSec', 'dailyResetHour', 'batchPerAccount', 'roundRestSec', 'accountSwitchIntervalSec', 'maxFrequentRetriesPerDay', 'sameVideoPerBatch']) {
     const value = Number(merged.dm[field]);
     merged.dm[field] = Number.isFinite(value) ? value : DEFAULT_SETTINGS.dm[field];
   }
@@ -202,6 +205,13 @@ function normalizeSettings(s = {}) {
     merged.action.userIntervalSec = DEFAULT_SETTINGS.action.userIntervalSec;
     merged.action.userIntervalJitter = DEFAULT_SETTINGS.action.userIntervalJitter;
     merged.action.pacingVersion = 1;
+  }
+  // 2026-10-21 用户确认的私信节奏（单号每 5 条休息 5 分钟；多号每号 5 人、立即切号、一轮后休息 5 分钟；
+  // 频繁 30 分钟 / 1 小时 / 2 小时，连续试发 3 次仍频繁今日停用）。首次升级统一迁移，之后保留用户自定义值。
+  if (s.dm?.pacingVersion !== 2) {
+    merged.dm.sessionPause = { ...DEFAULT_SETTINGS.dm.sessionPause };
+    for (const field of ['frequentCooldownSec', 'batchPerAccount', 'roundRestSec', 'accountSwitchIntervalSec', 'maxFrequentRetriesPerDay']) merged.dm[field] = DEFAULT_SETTINGS.dm[field];
+    merged.dm.pacingVersion = 2;
   }
   delete merged.action.intervalMinSec; delete merged.action.intervalMaxSec;
   delete merged.follow.intervalMinSec; delete merged.follow.intervalMaxSec;

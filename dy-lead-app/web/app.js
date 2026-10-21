@@ -1782,7 +1782,7 @@ function loadPacingForm() {
   $('c-col-interval').value = c.scrollIntervalSec ?? 3; $('c-col-jitter').value = Math.round((c.scrollJitter ?? .4) * 100);
   $('c-col-linkint').value = c.linkIntervalSec ?? 10; $('c-col-linkjit').value = Math.round((c.linkIntervalJitter ?? .2) * 100);
   $('a-user-interval').value = a.userIntervalSec ?? 30; $('a-user-jitter').value = Math.round((a.userIntervalJitter ?? .4) * 100);
-  $('a-dm-pause-count').value = sp.count ?? 10; $('a-dm-pause-min').value = sp.pauseMinSec ?? 3300; $('a-dm-pause-max').value = sp.pauseMaxSec ?? 3600;
+  $('a-dm-pause-count').value = sp.count ?? 5; $('a-dm-pause-min').value = sp.pauseMinSec ?? 300; $('a-dm-pause-max').value = sp.pauseMaxSec ?? 300;
   $('s-search-interval').value = se.intervalSec ?? 60; $('s-search-jitter').value = Math.round((se.intervalJitter ?? .2) * 100); $('s-search-daily').value = se.dailySearchLimit ?? 30;
   $('s-hu-errors').value = h.maxConsecutiveErrors || 3; renderPacingRanges();
 }

@@ -85,6 +85,7 @@ function freshSettings() {
   s.dm.frequentCooldownSec = 1800;
   s.dm.batchPerAccount = 3;
   s.dm.accountSwitchIntervalSec = 1;
+  s.dm.roundRestSec = 0; // 轮间休息另有专门测试
   s.dm.sameVideoPerBatch = 2;
   s.dm.adaptiveCap = false;
   s.dm.maxFrequentRetriesPerDay = 2;
@@ -505,27 +506,53 @@ test('分发保存账号状态时不覆盖批次中写入的强制休息计数',
   assert.equal(entry.dmSession && entry.dmSession.count, 3, 'runTask 写入的强制休息计数保留');
 });
 
-test('分发：冷却结束后首批仍频繁（期间一条没发出）→ 按今日上限停用，不再每小时试探', async () => {
+test('分发：频繁阶梯 30 分钟 → 1 小时 → 2 小时，连续试发 3 次仍频繁 → 今日停用', async () => {
   freshSettings();
+  { const s = store.getSettings(); s.dm.maxFrequentRetriesPerDay = 3; store.setSettings(s); } // 新默认值（测试公共设置写的是 2）
   seedLeads([1], [{ id: 5009, count: 6 }]);
   const calls = [];
   const frequent = { ok: false, error: '操作频繁，请稍后再试', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] };
-  const f = makeFixture({ fakeClock: true, recordUsage: true, trackCalls: calls, responses: { '1': [frequent, frequent, frequent] } });
+  const cooldowns = [];
+  const f = makeFixture({ fakeClock: true, recordUsage: true, trackCalls: calls, responses: { '1': [frequent, frequent, frequent, frequent, frequent] },
+    onSetTask: (patch, state, clock) => {
+      const entry = store.getDmAccountState()['1'];
+      if (patch.stage === 'waiting_cooldown' && entry && entry.frequentUntil && !cooldowns.some(c => c.until === entry.frequentUntil)) cooldowns.push({ until: entry.frequentUntil, minutes: Math.round((entry.frequentUntil - clock.now()) / 60000) });
+    } });
   const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
   const state = store.getDmAccountState()['1'];
-  assert.equal(calls.length, 2, '首批 + 冷却后 1 次，之后不再试');
+  assert.equal(calls.length, 4, '首次 + 到点试发 3 次');
+  assert.deepEqual(cooldowns.map(c => c.minutes), [30, 60, 120]);
   assert.ok(state.disabledUntil > f.clock.now(), '今日停用');
-  assert.equal(state.lastStopReason, '冷却后首条仍频繁，按今日上限停用');
+  assert.equal(state.lastStopReason, '频繁后试发 3 次仍频繁，按今日上限停用');
   assert.equal(result.unassigned, 6, '用户全部保留待分配，明天或换号再发');
 });
 
-test('分发：冷却后先发出几条再频繁 → 仍是普通冷却，不判今日上限', async () => {
+test('分发：试发后先发出几条再频繁 → 阶梯从 30 分钟重新开始，不停用', async () => {
   freshSettings();
-  seedLeads([1], [{ id: 5010, count: 6 }]);
+  seedLeads([1], [{ id: 5010, count: 9 }]);
   const frequent = { ok: false, error: '操作频繁，请稍后再试', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] };
-  const f = makeFixture({ fakeClock: true, recordUsage: true, responses: { '1': [frequent] } });
+  const minutes = [];
+  const f = makeFixture({ fakeClock: true, recordUsage: true, responses: { '1': [frequent, ids => ({ ok: true, dmCount: ids.length, pendingCount: 0, failedCount: 0, skipped: 0 }), frequent] },
+    onSetTask: (patch, state, clock) => {
+      const entry = store.getDmAccountState()['1'];
+      if (patch.stage === 'waiting_cooldown' && entry && entry.frequentUntil && minutes.length < 5 && !minutes.some(m => m.until === entry.frequentUntil)) minutes.push({ until: entry.frequentUntil, m: Math.round((entry.frequentUntil - clock.now()) / 60000) });
+    } });
   const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
   const state = store.getDmAccountState()['1'];
-  assert.ok(!state.disabledUntil || state.disabledUntil <= f.clock.now(), '冷却后恢复发送，不停用');
-  assert.equal(result.success, 6);
+  assert.deepEqual(minutes.map(x => x.m), [30, 30], '中间恢复发出过私信，第二次频繁重新从 30 分钟开始');
+  assert.ok(!state.disabledUntil || state.disabledUntil <= f.clock.now());
+  assert.equal(result.success, 9);
+});
+
+test('分发：每轮各号发完一批后统一休息 roundRestSec，再开始下一轮', async () => {
+  freshSettings();
+  const s = store.getSettings(); s.dm.roundRestSec = 300; s.dm.accountSwitchIntervalSec = 0; store.setSettings(s);
+  seedLeads([1], [{ id: 5011, count: 12 }]);
+  const rests = [];
+  const f = makeFixture({ fakeClock: true, recordUsage: true, onSetTask: (patch, state, clock) => { if (patch.stage === 'waiting_round' && !rests.some(r => r.until === patch.waitingUntil)) rests.push({ until: patch.waitingUntil, at: clock.now() }); } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1', '2'], filters: { f: 'all' } });
+  assert.equal(result.success, 12);
+  // 每批 3 人、2 个号：一轮 6 人，12 人共两轮 → 中间只休息 1 次（最后一轮结束无人可发不再休息）
+  assert.equal(rests.length, 1);
+  assert.equal(Date.parse(rests[0].until) - rests[0].at, 300000);
 });

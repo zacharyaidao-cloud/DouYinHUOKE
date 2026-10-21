@@ -431,7 +431,7 @@ const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 const server=http.createServer(async(req,res)=>{
   try {
     const pathname=new URL(req.url||'/','http://127.0.0.1').pathname;
-    if(req.method==='GET'&&pathname==='/health') return json(res,{ok:true,app:'dy-lead-app',version:'2.5.1',port:actualPort});
+    if(req.method==='GET'&&pathname==='/health') return json(res,{ok:true,app:'dy-lead-app',version:'2.5.2',port:actualPort});
     if(pathname.startsWith('/api/')) {
       if(DESKTOP_TOKEN&&req.headers['x-desktop-token']!==DESKTOP_TOKEN) return json(res,{ok:false,error:'仅允许本机客户端访问'},403);
       const origin=req.headers.origin; if(origin&&origin!=='http://127.0.0.1:'+actualPort) return json(res,{ok:false,error:'来源不受信任'},403);
@@ -452,7 +452,7 @@ try {
 } catch(e) { console.error('数据迁移未完成：'+e.message); process.exitCode=1; }
 server.listen(PORT,'127.0.0.1',()=>{
   actualPort=server.address().port;
-  console.log(JSON.stringify({event:'ready',port:actualPort,app:'dy-lead-app',version:'2.5.1'}));
+  console.log(JSON.stringify({event:'ready',port:actualPort,app:'dy-lead-app',version:'2.5.2'}));
   if(process.send) process.send({type:'ready',port:actualPort,dataDir:path.resolve(store.DATA_DIR)});
   setInterval(()=>license.syncTime().catch(()=>{}),60000).unref();
 });

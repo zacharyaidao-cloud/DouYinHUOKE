@@ -4,8 +4,11 @@ $workspaceDir = Split-Path -Parent $PSScriptRoot
 $sourceDir = Join-Path $workspaceDir 'dy-lead-app'
 $releaseVersion = (Get-Content -LiteralPath (Join-Path $workspaceDir 'desktop/package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 if ($releaseVersion -notmatch '^\d+\.\d+\.\d+$') { throw '客户端版本格式无效' }
-if (!$InstallerCompilerPath) { $InstallerCompilerPath = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe' }
-if (!(Test-Path -LiteralPath $installerCompilerPath)) { throw '缺少 Inno Setup 7' }
+if (!$InstallerCompilerPath) {
+  # 优先 Inno Setup 7，没有则用 6（6.3 起支持 x64compatible；中文语言文件随项目提供）
+  $InstallerCompilerPath = @('Programs\Inno Setup 7\ISCC.exe', 'Programs\Inno Setup 6\ISCC.exe') | ForEach-Object { Join-Path $env:LOCALAPPDATA $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+}
+if (!$InstallerCompilerPath -or !(Test-Path -LiteralPath $installerCompilerPath)) { throw '缺少 Inno Setup（6.3 以上或 7）' }
 & (Join-Path $sourceDir 'node.exe') (Join-Path $PSScriptRoot 'generate-field-guide.js')
 if ($LASTEXITCODE -ne 0) { throw '同期字段字典与流程文档生成失败' }
 if (!$FocusedChecks) {

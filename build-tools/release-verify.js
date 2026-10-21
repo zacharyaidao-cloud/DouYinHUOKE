@@ -171,7 +171,7 @@ const REQUIRED = [
   'workflow.js', 'lead-query.js', 'license.js', 'config.json', 'trusted-license.json',
   'node.exe', '抖音获客软件.exe', 'web/index.html', 'web/app.js', 'web/style.css',
   'lib/lead-fields.js', 'lib/outreach-browser.js', 'lib/dm-protocol.js', 'lib/browser-runtime.js',
-  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js',
+  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js', 'lib/lead-dedupe.js', 'lib/keyword-stats.js',
   'node_modules/playwright-core/package.json', 'node_modules/ws/package.json',
   'resources/app/main.js', 'resources/app/preload.js', 'resources/app/account-browser-host.js',
   '使用说明.txt'
@@ -440,7 +440,8 @@ function zipEntries(file) {
 function runInstaller() {
   const version = versionOf();
   const exe = path.join(ROOT, `华贸获客-安装包-${version}.exe`);
-  const zip = path.join(ROOT, `华贸获客-程序包-${version}.zip`);
+  // 完整打包脚本生成“程序包”，绿色版打包脚本生成“绿色版”：两者都是同一发布目录的完整压缩
+  const zip = [`华贸获客-程序包-${version}.zip`, `华贸获客-绿色版-${version}.zip`].map(name => path.join(ROOT, name)).find(file => fs.existsSync(file)) || path.join(ROOT, `华贸获客-程序包-${version}.zip`);
   check('installer-exists', fs.existsSync(exe), path.basename(exe));
   check('archive-exists', fs.existsSync(zip), path.basename(zip));
   if (fs.existsSync(exe)) {

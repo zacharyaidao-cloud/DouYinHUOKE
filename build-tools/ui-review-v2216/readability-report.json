@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-10-21T05:56:15.097Z",
+  "verifiedAt": "2026-10-21T17:38:50.586Z",
   "source": "isolated local mock with source defaults",
   "reports": [
     {
@@ -102,13 +102,13 @@
       "width": 1360,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 100,
+      "textCount": 105,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
       "smallText": [],
       "smallControls": [],
-      "controlsCount": 13
+      "controlsCount": 14
     },
     {
       "width": 1360,
@@ -174,13 +174,13 @@
       "width": 1100,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 101,
+      "textCount": 105,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
       "smallText": [],
       "smallControls": [],
-      "controlsCount": 13
+      "controlsCount": 14
     },
     {
       "width": 1100,
@@ -246,13 +246,13 @@
       "width": 760,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 99,
+      "textCount": 103,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
       "smallText": [],
       "smallControls": [],
-      "controlsCount": 13
+      "controlsCount": 14
     },
     {
       "width": 760,
@@ -318,13 +318,13 @@
       "width": 390,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 97,
+      "textCount": 101,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
       "smallText": [],
       "smallControls": [],
-      "controlsCount": 13
+      "controlsCount": 14
     },
     {
       "width": 390,

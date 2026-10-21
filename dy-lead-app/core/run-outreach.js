@@ -25,30 +25,41 @@ if (!profileDir || !listFile || !outDir || (dm && !message)) {
 
 // 一个用户是否已有“定论”（不再重试）：送达 / 跳过 / 待核验 / 对方原因发不出（私密、窗口不出现、接收人级拒绝）。
 // 账号级拒绝（频繁、上限）不算定论：对方根本没收到，账号恢复后要重发。
+// 没打开聊天（入口 / 会话 / 填写）的人允许过后再试一次：会话建好后再打开通常正常（规格第 6 节），累计 2 次未打开才算定论。
+// 只有“检查码 2”、没有提示文字的拒绝也是账号级频繁（dm-protocol 已按此归类；旧结果里可能未带 failureScope）。
+const notOpenedCount = new Map();
+function countAttempt(row) {
+  if (row.dm?.state === 'not_sent' && ['entry', 'conversation', 'fill'].includes(row.dm.stage)) notOpenedCount.set(row.secUid, (notOpenedCount.get(row.secUid) || 0) + 1);
+}
 function settledOf(row) {
   const dm = row.dm || {};
   if (['confirmed_success', 'refused', 'skipped', 'pending_verification'].includes(dm.state)) return true;
+  if (dm.state === 'not_sent' && ['entry', 'conversation', 'fill'].includes(dm.stage)) return (notOpenedCount.get(row.secUid) || 0) >= 2;
   if (dm.state === 'not_sent' && dm.stage !== 'error') return true;
-  if (dm.state === 'confirmed_failure' && dm.failureScope !== 'account') return true;
+  if (dm.state === 'confirmed_failure' && dm.failureScope !== 'account' && !/检查码：2/.test(dm.reason || '')) return true;
   return false;
 }
 const probeMinutes = Math.max(0, Number(arg('probe-interval-min')) || 0); // >0：触发频繁后每隔 N 分钟试发 1 条，恢复即续发
 const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
+// --batch=N --batch-rest-min=M：每处理 N 人后完全静默 M 分钟（实测一阵约 11–12 条触发频繁，静默 60 分钟可恢复）
+const batchSize = Math.max(0, Number(arg('batch')) || 0), batchRestMin = Math.max(0, Number(arg('batch-rest-min')) || 60);
 
 (async () => {
   fs.mkdirSync(outDir, { recursive: true });
   const resultsFile = path.join(outDir, 'results.json');
   const all = fs.existsSync(resultsFile) ? JSON.parse(fs.readFileSync(resultsFile, 'utf8')) : [];
-  const latest = new Map(); for (const row of all) latest.set(row.secUid, row);
+  const latest = new Map(); for (const row of all) { latest.set(row.secUid, row); countAttempt(row); }
   const settled = new Set([...latest.values()].filter(settledOf).map(row => row.secUid));
   // 以前已关注成功/已请求的人：重发私信时不再点关注
   const followed = new Set(all.filter(row => ['confirmed_success', 'requested', 'already'].includes(row.follow?.state)).map(row => row.secUid));
   let targets = JSON.parse(fs.readFileSync(listFile, 'utf8')).filter(row => row.priority === priority && row.secUid && !settled.has(row.secUid))
     .map(row => followed.has(row.secUid) ? { ...row, skipFollow: true } : row);
+  // --dry-run=1：只打印本次计划处理的人，不打开浏览器
+  if (arg('dry-run') === '1') { console.log(JSON.stringify(targets.map(row => [row.nickname, row.skipFollow ? 'skipFollow' : 'follow']))); console.log('users', targets.length, 'alreadySettled', settled.size); return; }
   const trace = createTrace(path.join(outDir, 'trace.jsonl'));
   trace.step('outreach.plan', { priority, users: targets.length, follow, dm, alreadySettled: settled.size, probeMinutes, message });
   const session = new Session({ profileDir, trace });
-  const save = result => { all.push({ ...result, at: new Date().toISOString() }); fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8'); };
+  const save = result => { countAttempt(result); all.push({ ...result, at: new Date().toISOString() }); fs.writeFileSync(resultsFile, JSON.stringify(all, null, 2), 'utf8'); };
   try {
     await session.open();
     if (!await session.ensureLogin()) throw new Error('未登录');
@@ -57,11 +68,20 @@ const probeMax = Math.max(1, Number(arg('probe-max')) || 18);
     if (startDelay) { trace.step('outreach.quiet_wait', { minutes: startDelay }); await session.page.waitForTimeout(startDelay * 60000); }
     let limitedAt = null, probes = 0;
     while (targets.length) {
-      const results = await outreachList(session, targets, { follow, dm, message, onResult: save });
+      const results = await outreachList(session, batchSize ? targets.slice(0, batchSize) : targets, { follow, dm, message, onResult: save });
       const done = new Set(results.filter(settledOf).map(row => row.secUid));
-      targets = targets.filter(row => !done.has(row.secUid));
+      // 本轮已处理但未定论的人（没打开聊天）挪到队尾，过后再试；已关注的不再点关注
+      const tried = new Set(results.map(row => row.secUid));
+      const followedNow = new Set(results.filter(row => ['confirmed_success', 'requested', 'already'].includes(row.follow?.state)).map(row => row.secUid));
+      const mark = row => followedNow.has(row.secUid) ? { ...row, skipFollow: true } : row;
+      targets = [...targets.filter(row => !done.has(row.secUid) && !tried.has(row.secUid)), ...targets.filter(row => !done.has(row.secUid) && tried.has(row.secUid)).map(mark)];
       const stop = results[results.length - 1]?.stop;
-      if (!stop) break;                                       // 名单走完
+      if (!stop) {
+        if (!batchSize || !targets.length) break;             // 名单走完
+        trace.step('outreach.batch_rest', { minutes: batchRestMin, remaining: targets.length });
+        await session.page.waitForTimeout(batchRestMin * 60000);
+        continue;
+      }
       const frequent = /FREQUENT|restricted/i.test(stop.code || '');
       if (!frequent || !probeMinutes) { trace.step('outreach.halt', { reason: stop.reason, code: stop.code, remaining: targets.length }); break; }
       limitedAt = limitedAt || Date.now();

@@ -60,10 +60,27 @@ async function outreachOneUnsafe(session, target, { follow, dm, message }) {
 
   // c. 私信
   if (dm) {
-    const opened = await adapter.openDirectMessage(page, lead, options).catch(error => { trace.step('outreach.dm_error', { stage: 'open', message: error.message }); return false; });
-    if (!opened) { result.dm = { state: 'not_sent', stage: 'entry', diagnostic: adapter.getDiagnostic(page) }; trace.step('outreach.dm', result.dm); return result; }
-    const ready = await adapter.ensureDirectMessageConversation(page, lead, options).catch(error => { trace.step('outreach.dm_error', { stage: 'conversation', message: error.message }); return false; });
-    if (!ready) { result.dm = { state: 'not_sent', stage: 'conversation', diagnostic: adapter.getDiagnostic(page) }; trace.step('outreach.dm', result.dm); return result; }
+    const openConversation = async () => {
+      const opened = await adapter.openDirectMessage(page, lead, options).catch(error => { trace.step('outreach.dm_error', { stage: 'open', message: error.message }); return false; });
+      if (!opened) return { stage: 'entry', diagnostic: adapter.getDiagnostic(page) };
+      const ready = await adapter.ensureDirectMessageConversation(page, lead, options).catch(error => { trace.step('outreach.dm_error', { stage: 'conversation', message: error.message }); return false; });
+      return ready ? null : { stage: 'conversation', diagnostic: adapter.getDiagnostic(page) };
+    };
+    let failed = await openConversation();
+    // 首次联系“只出会话列表”（2026-10-21 实测）：conversation/create 已成功但聊天层没打开；会话建好后再打开就和老会话一样正常。
+    // 重新加载主页、稍候再点一次私信（只重试一次；不涉及发送，不会重复发消息）。
+    if (failed && failed.stage === 'conversation' && ['DM_MESSAGE_LIST_ONLY', 'DM_TARGET_CHAT_NOT_READY'].includes(failed.diagnostic?.code)) {
+      trace.step('outreach.dm_reopen', { code: failed.diagnostic.code });
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(3000 + Math.round(Math.random() * 2000));
+      await page.goto(`https://www.douyin.com/user/${encodeURIComponent(target.secUid)}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await page.waitForTimeout(4000);
+      platform = await platformState(page);
+      if (platform.stop) { result.stop = platform; return result; }
+      failed = await openConversation();
+      if (!failed) trace.step('outreach.dm_reopen_ok', {});
+    }
+    if (failed) { result.dm = { state: 'not_sent', ...failed }; trace.step('outreach.dm', result.dm); return result; }
     trace.step('outreach.dm_conversation', { recipient: adapter.getDiagnostic(page).recipientEvidence || '' });
     const history = await adapter.readDirectMessageHistory(page, lead, options).catch(() => null);
     if (history?.restriction) {

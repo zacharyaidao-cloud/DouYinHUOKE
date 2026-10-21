@@ -74,6 +74,7 @@ const F = {
   dmAccountState: path.join(DATA_DIR, 'dm-account-state.json'),
   contactAllocation: path.join(DATA_DIR, 'contact-allocation.json'),
   keywordStats: path.join(DATA_DIR, 'keyword-stats.json'),
+  migrations: path.join(DATA_DIR, 'migrations.json'),
   searchDraft: path.join(DATA_DIR, 'search-draft.json')
 };
 
@@ -288,6 +289,19 @@ function getSearchResults() {
 }
 function setSearchResults(list) { writeJson(F.searchResults, Array.isArray(list) ? list : []); }
 
+/** 一次性数据迁移的完成标记（如 leadDedupeV1：合并跨账号重复线索） */
+function getMigrations() { const raw = readJson(F.migrations, {}); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; }
+function setMigrations(marks) { writeJson(F.migrations, marks); }
+/** 把数据文件完整复制一份备份（迁移改写前调用），返回备份文件名 */
+function backupDataFile(name, tag) {
+  const file = F[name];
+  if (!file || !fs.existsSync(file)) return '';
+  const stamp = nowStr().replace(/[-: ]/g, '').slice(0, 14);
+  const target = file.replace(/\.json$/, `.${tag}-${stamp}.json`);
+  fs.copyFileSync(file, target);
+  return path.basename(target);
+}
+
 /** 关键词统计（见 lib/keyword-stats.js）与搜索输入草稿（关键词与搜索选项，重启后恢复） */
 function getKeywordStats() { const raw = readJson(F.keywordStats, {}); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; }
 function recordKeywordSearch(keyword, run) {
@@ -422,7 +436,7 @@ module.exports = {
   getSettings, setSettings, normalizeSettings, getIndustryProfile, getVideos, setVideos,
   getCooldowns, setCooldowns, getDaily, setDaily,
   getPlans, setPlans, getTaskCheckpoint, setTaskCheckpoint,
-  getSearchResults, setSearchResults, addSearchResults, getKeywordStats, recordKeywordSearch, getSearchDraft, setSearchDraft,
+  getSearchResults, setSearchResults, addSearchResults, getKeywordStats, recordKeywordSearch, getSearchDraft, setSearchDraft, getMigrations, setMigrations, backupDataFile,
   getDmAccountState, setDmAccountState, getAllocations, setAllocations,
   todayStr, nowStr, opDayStr, nextResetMs, getDailyUsage, bumpDaily,
   log, tailLog, profileDir, DEFAULT_SETTINGS

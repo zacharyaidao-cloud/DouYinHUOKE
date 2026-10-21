@@ -19,6 +19,7 @@ const { parseVideoLinks, normalizeVideoLink, workIdFromLink } = require('./lib/v
 const { openComments, scrollComments, landingWork, navigateCollectionPage } = require('./lib/collection-browser');
 const { selectWorkDetail, workDescription } = require('./lib/work-metadata');
 const { recordWorkDetail, recordPageMetadata } = require('./lib/work-record');
+const { mergeDuplicateLeads, remapPlans } = require('./lib/lead-dedupe');
 const { readPageWorkMetadata } = require('./lib/page-work-metadata');
 const { readPageComments } = require('./lib/page-comments');
 const { userMetadata, identifier } = require('./lib/user-metadata');
@@ -352,7 +353,28 @@ function refreshLeadStatus(l) {
 }
 
 /** 旧数据迁移：status 单值 → 独立标志 */
+// 一次性：合并旧版本因不同采集账号重复保存的同一条评论（去重规则与采集时的 dedupeKey 相同）。
+// 改写前完整备份 leads.json；执行计划里对被合并行的引用改指保留行。完成后写标记，不再重复执行。
+function dedupeStoredLeadsOnce() {
+  const marks = store.getMigrations();
+  if (marks.leadDedupeV1) return null;
+  const before = store.getLeads();
+  const { leads: next, idMap } = mergeDuplicateLeads(before, dedupeKey);
+  let backup = '';
+  if (idMap.size) {
+    backup = store.backupDataFile('leads', 'before-dedupe');
+    store.setLeads(next);
+    const plans = store.getPlans();
+    if (remapPlans(plans, idMap)) store.setPlans(plans);
+  }
+  const record = { at: store.nowStr(), before: before.length, after: next.length, merged: idMap.size, backup };
+  store.setMigrations({ ...marks, leadDedupeV1: record });
+  if (idMap.size) store.log('system', `数据迁移：合并跨账号重复线索 ${idMap.size} 条（${before.length} → ${next.length}），原文件已备份为 ${backup}`);
+  return record;
+}
+
 function migrateLeads() {
+  dedupeStoredLeadsOnce();
   const leads = store.getLeads();
   let changed = false;
   for (const l of leads) {
@@ -1160,6 +1182,6 @@ module.exports = {
   dmDistributionPreview: dmDistribution.dmDistributionPreview,
   parseProxy, applyTemplate, matchIntent, parseVideoList,
   pickBrowserOpts,
-  buildFollowQueue, buildDmQueue, migrateLeads, refreshLeadStatus, saveLeadAction, saveContactObservation,
+  buildFollowQueue, buildDmQueue, migrateLeads, dedupeStoredLeadsOnce, refreshLeadStatus, saveLeadAction, saveContactObservation,
   applyProfileData, passiveProfileResponse, collectOne
 };

@@ -233,3 +233,27 @@ test('组合操作只消耗一次主页预算，显式零预算不给执行名�
   const empty = engine.createPlan('1', 'outreach');
   assert.equal(empty.count, 0); assert.match(empty.skippedReason, /主页访问额度/);
 });
+
+test('一次性合并跨账号重复线索：先完整备份，执行计划改指保留行，写完成标记后不再重复执行', () => {
+  const marks = store.getMigrations(); delete marks.leadDedupeV1; store.setMigrations(marks);
+  const link = 'https://www.douyin.com/note/7325461810767727872';
+  store.setLeads([
+    { id: 1, accountId: '1', uid: 'dup-user', demand: '账号停用了', videoLink: link, followState: 'confirmed_success', followedAt: '2026-10-19 10:00:00', dmCount: 0 },
+    { id: 2, accountId: '2', uid: 'dup-user', demand: '账号停用了', videoLink: link + '?from=share', dmState: 'confirmed_success', dmLastAt: '2026-10-21 10:00:00', dmCount: 1 },
+    { id: 3, accountId: '1', uid: 'other-user', demand: '另一个人', videoLink: link, dmCount: 0 }
+  ]);
+  store.setPlans([{ id: 'p1', leadIds: ['1', '3'], leads: [{ id: 1 }, { id: 3 }] }]);
+  const record = engine.dedupeStoredLeadsOnce();
+  assert.equal(record.merged, 1); assert.equal(record.before, 3); assert.equal(record.after, 2);
+  assert.ok(record.backup && fs.existsSync(path.join(store.DATA_DIR, record.backup)), '原文件已备份');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(store.DATA_DIR, record.backup), 'utf8')).length, 3, '备份是合并前的完整数据');
+  const leads = store.getLeads();
+  assert.deepEqual(leads.map(l => l.id), [2, 3]);
+  assert.equal(leads[0].followState, 'confirmed_success'); assert.equal(leads[0].dmState, 'confirmed_success');
+  assert.deepEqual(store.getPlans()[0].leadIds, ['2', '3']);
+  assert.equal(store.getMigrations().leadDedupeV1.merged, 1);
+  // 再次启动：已有标记，不再执行（即使又出现重复也不动，日常采集由 dedupeKey 防止新重复）
+  store.setLeads([...store.getLeads(), { id: 9, accountId: '3', uid: 'dup-user', demand: '账号停用了', videoLink: link }]);
+  assert.equal(engine.dedupeStoredLeadsOnce(), null);
+  assert.equal(store.getLeads().length, 3);
+});

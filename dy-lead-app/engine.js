@@ -1123,6 +1123,11 @@ const actions = createActions({
 });
 const { followTask, dmTask, outreachTask, openLeadProfile } = actions;
 
+/* ===================== 私信归集（只读）===================== */
+const { createInboxTasks } = require('./engine-inbox-tasks');
+const { inboxTask } = createInboxTasks({ store, taskState, setTask, failTask, authorize, getAlive, launchAccount,
+  closeAccount: id => closeAccount(id), refreshLeadStatus });
+
 /* ===================== AI：同规则、固定范围、安全回写 ===================== */
 const { createAiTasks } = require('./engine-ai-tasks');
 const { aiJudgeOne, aiJudgeBatch, aiTask } = createAiTasks({
@@ -1176,7 +1181,7 @@ function failTask(msg) {
 module.exports = {
   configure, createPlan, outreachTask, openLeadProfile, shutdown,
   taskState, launchAccount, closeAccount, openForLogin, checkLogin, scanAccountLogins, isLoggedIn,
-  collectTask, followTask, dmTask, aiTask, aiJudgeOne, aiJudgeBatch, stopTask,
+  collectTask, followTask, dmTask, aiTask, inboxTask, aiJudgeOne, aiJudgeBatch, stopTask,
   searchTask: searchTasks.searchTask,
   dmDistributionTask: dmDistribution.dmDistributionTask,
   dmDistributionPreview: dmDistribution.dmDistributionPreview,

@@ -75,6 +75,7 @@ const F = {
   contactAllocation: path.join(DATA_DIR, 'contact-allocation.json'),
   keywordStats: path.join(DATA_DIR, 'keyword-stats.json'),
   migrations: path.join(DATA_DIR, 'migrations.json'),
+  inbox: path.join(DATA_DIR, 'inbox.json'),
   searchDraft: path.join(DATA_DIR, 'search-draft.json')
 };
 
@@ -289,6 +290,10 @@ function getSearchResults() {
 }
 function setSearchResults(list) { writeJson(F.searchResults, Array.isArray(list) ? list : []); }
 
+/** 私信归集：各账号的会话与消息（见 lib/inbox-store.js） */
+function getInbox() { const raw = readJson(F.inbox, { accounts: {} }); return raw && typeof raw === 'object' && raw.accounts && typeof raw.accounts === 'object' ? raw : { accounts: {} }; }
+function setInbox(inbox) { writeJson(F.inbox, inbox && inbox.accounts ? inbox : { accounts: {} }); }
+
 /** 一次性数据迁移的完成标记（如 leadDedupeV1：合并跨账号重复线索） */
 function getMigrations() { const raw = readJson(F.migrations, {}); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; }
 function setMigrations(marks) { writeJson(F.migrations, marks); }
@@ -436,7 +441,7 @@ module.exports = {
   getSettings, setSettings, normalizeSettings, getIndustryProfile, getVideos, setVideos,
   getCooldowns, setCooldowns, getDaily, setDaily,
   getPlans, setPlans, getTaskCheckpoint, setTaskCheckpoint,
-  getSearchResults, setSearchResults, addSearchResults, getKeywordStats, recordKeywordSearch, getSearchDraft, setSearchDraft, getMigrations, setMigrations, backupDataFile,
+  getSearchResults, setSearchResults, addSearchResults, getKeywordStats, recordKeywordSearch, getSearchDraft, setSearchDraft, getMigrations, setMigrations, backupDataFile, getInbox, setInbox,
   getDmAccountState, setDmAccountState, getAllocations, setAllocations,
   todayStr, nowStr, opDayStr, nextResetMs, getDailyUsage, bumpDaily,
   log, tailLog, profileDir, DEFAULT_SETTINGS

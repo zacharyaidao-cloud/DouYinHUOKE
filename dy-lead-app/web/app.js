@@ -1632,6 +1632,83 @@ function renderSearchFeedback() {
     box.className = 'task-box hidden';
   }
 }
+/* ---------- 私信消息（归集，只读） ---------- */
+const inboxAccountsChecked = new Set();
+let inboxAccountsInit = false, inboxLoadBusy = false;
+function renderInboxAccounts() {
+  const box = $('inbox-accounts');
+  if (!box) return;
+  const accounts = state.accounts || [];
+  if (!inboxAccountsInit && accounts.length) { accounts.forEach(a => inboxAccountsChecked.add(String(a.id))); inboxAccountsInit = true; }
+  for (const id of [...inboxAccountsChecked]) if (!accounts.some(a => String(a.id) === id)) inboxAccountsChecked.delete(id);
+  box.innerHTML = accounts.length ? accounts.map(a => `<label><input type="checkbox" data-inbox-account="${esc(a.id)}" ${inboxAccountsChecked.has(String(a.id)) ? 'checked' : ''}>${esc(a.name)}</label>`).join('')
+    : '<span class="hint">请先在账号管理添加并登录账号</span>';
+}
+$('inbox-accounts').addEventListener('change', event => {
+  const id = event.target.dataset && event.target.dataset.inboxAccount;
+  if (!id) return;
+  if (event.target.checked) inboxAccountsChecked.add(id); else inboxAccountsChecked.delete(id);
+});
+function inboxTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function renderInboxFeedback() {
+  const box = $('inbox-feedback'), task = state.task || {};
+  if (task.kind !== 'inbox') { box.className = 'task-box hidden'; return; }
+  box.className = 'task-box ' + (task.running ? 'running' : 'ok');
+  box.textContent = (task.running ? '进行中 · ' : '') + (task.status || '');
+}
+function renderInbox() {
+  const data = state.inbox || { rows: [], scanned: {} };
+  const filter = $('inbox-filter').value;
+  const rows = data.rows.filter(row => filter === 'unread' ? row.unread > 0 : filter === 'lead' ? !!row.lead : true);
+  const unread = data.rows.reduce((n, row) => n + (row.unread > 0 ? 1 : 0), 0);
+  $('inbox-count').textContent = data.rows.length ? `${data.rows.length} 个会话${unread ? `，${unread} 个有未读` : ''}` : '';
+  const names = new Map((state.accounts || []).map(a => [String(a.id), a.name]));
+  const scanned = Object.entries(data.scanned || {}).map(([id, s]) => `${names.get(id) || id}：${inboxTime(s.scannedAt)}`);
+  $('inbox-scanned').textContent = scanned.length ? '上次检查 ' + scanned.join('｜') : '还没有检查过私信';
+  $('inbox-list').innerHTML = rows.map(row => {
+    const name = row.nickname || (row.lead && row.lead.nickname) || ('UID ' + row.peerUid);
+    const home = row.peerSecUid ? `<a href="https://www.douyin.com/user/${esc(encodeURIComponent(row.peerSecUid))}" target="_blank" rel="noopener noreferrer">主页</a>` : '';
+    const lines = (row.messages || []).slice(-4).map(m => `<div class="inbox-line ${m.from === 'peer' ? 'peer' : 'me'}${m.kind === 'system' ? ' system' : ''}"><span class="hint">${m.from === 'peer' ? '对方' : '我'} ${esc(inboxTime(m.at))}</span> ${esc(m.text || '')}</div>`).join('');
+    const lead = row.lead ? `<span class="lead-line">线索 #${esc(row.lead.id)}</span><span class="lead-line ${row.lead.replied ? 'ok-hint' : 'hint'}">${row.lead.replied ? '已回复' : '已私信'}</span>` : '<span class="hint">非线索</span>';
+    return `<tr class="${row.unread ? 'inbox-unread' : ''}">
+      <td>${esc(row.accountName)}<div class="hint">${row.inbox === 'stranger' ? '陌生人消息' : '消息'}</div></td>
+      <td><b>${esc(name)}</b>${row.unread ? ` <span class="inbox-badge">${esc(row.unread)} 条新</span>` : ''}<div>${home}</div></td>
+      <td class="inbox-messages">${lines}</td>
+      <td>${esc(inboxTime(row.lastPeerAt))}</td>
+      <td>${lead}</td>
+      <td>${row.unread ? `<button class="normal" data-inbox-read="${esc(row.accountId)}" data-peer="${esc(row.peerUid)}">标为已读</button>` : ''}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty-cell">${data.rows.length ? '当前筛选下没有会话' : '还没有收到回复；点“检查私信”读取各账号的私信页'}</td></tr>`;
+}
+async function loadInbox() {
+  if (inboxLoadBusy) return;
+  inboxLoadBusy = true;
+  try { const r = await api('/inbox'); state.inbox = { rows: r.rows || [], scanned: r.scanned || {} }; renderInbox(); }
+  catch (e) { $('inbox-scanned').textContent = '读取私信记录失败：' + (e.message || ''); }
+  finally { inboxLoadBusy = false; }
+}
+$('inbox-filter').addEventListener('change', renderInbox);
+$('inbox-list').addEventListener('click', async event => {
+  const button = event.target.closest('[data-inbox-read]');
+  if (!button) return;
+  await api('/inbox/read', { method: 'POST', body: { accountId: button.dataset.inboxRead, peerUid: button.dataset.peer } });
+  loadInbox();
+});
+$('btn-inbox-scan').addEventListener('click', async () => {
+  const accountIds = [...inboxAccountsChecked];
+  if (!accountIds.length) { $('inbox-feedback').className = 'task-box err'; $('inbox-feedback').textContent = '请先勾选要检查的账号'; return; }
+  try {
+    await api('/inbox/scan', { method: 'POST', body: { accountIds } });
+    $('inbox-feedback').className = 'task-box running'; $('inbox-feedback').textContent = '已开始检查私信（只读，不发送）';
+    refresh();
+  } catch (error) { $('inbox-feedback').className = 'task-box err'; $('inbox-feedback').textContent = error.message || '启动失败'; }
+});
+$('btn-inbox-stop').addEventListener('click', async () => { await api('/tasks/stop', { method: 'POST' }); refresh(); });
+
 /* ---------- 搜索输入草稿：关键词与搜索选项自动保存到本机，重启或刷新后恢复 ---------- */
 const SEARCH_DRAFT_FIELDS = { keywords: 's-kws', workType: 's-type', minComments: 's-minc', publishedWithinDays: 's-days', maxPages: 's-maxp' };
 let searchDraftTimer = null, searchDraftLoaded = false;
@@ -2249,7 +2326,7 @@ async function refresh() {
     accountRefreshError = '';
     actionStateError = '';
     renderOverview(); renderAccounts();
-    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account'); renderExtraCollectAccounts();
+    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account'); renderExtraCollectAccounts(); renderInboxAccounts();
     renderActionStatus(); renderSelectionInfo(); renderOutreachControls(); renderWorkflowStatus();
     renderEmbeddedBrowser();
     try { state.videoHistory = ((await api('/videos')) || {}).videos || []; }
@@ -2259,6 +2336,7 @@ async function refresh() {
     if (vis('page-settings') && pageDirty) loadSettingsForm();
     if (vis('page-leads')) loadLeads();
     if (vis('page-logs')) renderLogs();
+    if (vis('page-inbox')) { renderInboxFeedback(); loadInbox(); }
     if (vis('page-collect')) {
       if (pageDirty) loadCollectForm();
       renderLinkRows(); renderVideoHistory();

@@ -397,6 +397,17 @@ async function handleApi(req,res,pathname) {
       return json(res,{ok:true});
     }
   }
+  // 私信归集：检查（只读）、列表、标记已读
+  if(method==='POST'&&pathname==='/api/inbox/scan') { const b=await readBody(req); const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:(store.getAccounts()||[]).map(a=>String(a.id)); for(const id of ids) requireAccount(id); startTask(session,()=>engine.inboxTask(ids)); return json(res,{ok:true,started:true}); }
+  if(method==='GET'&&pathname==='/api/inbox') {
+    const query=new URL(req.url,'http://127.0.0.1').searchParams;
+    const leads=store.getLeads(), bySec=new Map(); for(const l of leads) if(l.uid&&!bySec.has(l.uid)) bySec.set(l.uid,l);
+    const inbox=store.getInbox();
+    const rows=require('./lib/inbox-store').listConversations(inbox,{accounts:store.getAccounts(),leadsBySecUid:bySec,onlyPeer:query.get('all')!=='1'});
+    const scanned=Object.fromEntries(Object.entries(inbox.accounts||{}).map(([id,a])=>[id,{scannedAt:a.scannedAt||0,baselineAt:a.baselineAt||0,count:Object.keys(a.conversations||{}).length}]));
+    return json(res,{ok:true,rows,scanned});
+  }
+  if(method==='POST'&&pathname==='/api/inbox/read') { const b=await readBody(req); const inbox=store.getInbox(); const ok=require('./lib/inbox-store').markRead(inbox,b.accountId,b.peerUid); if(ok) store.setInbox(inbox); return json(res,{ok}); }
   if(method==='POST'&&pathname==='/api/collect/start') { const b=await readBody(req); const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:[b.accountId]; for(const id of ids) requireAccount(id); startTask(session,()=>engine.collectTask(ids.length>1?ids:ids[0],b.links||b.videoUrls||b.videoUrl)); return json(res,{ok:true,started:true}); }
   if(method==='GET'&&pathname==='/api/search/results') return json(res,{ok:true,results:store.getSearchResults()});
   if(method==='GET'&&pathname==='/api/search/keyword-stats') return json(res,{ok:true,rows:require('./lib/keyword-stats').summarizeKeywords(store.getKeywordStats(),store.getLeads(),store.getVideos(),store.getSearchResults())});
@@ -431,7 +442,7 @@ const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=u
 const server=http.createServer(async(req,res)=>{
   try {
     const pathname=new URL(req.url||'/','http://127.0.0.1').pathname;
-    if(req.method==='GET'&&pathname==='/health') return json(res,{ok:true,app:'dy-lead-app',version:'2.5.2',port:actualPort});
+    if(req.method==='GET'&&pathname==='/health') return json(res,{ok:true,app:'dy-lead-app',version:'2.5.3',port:actualPort});
     if(pathname.startsWith('/api/')) {
       if(DESKTOP_TOKEN&&req.headers['x-desktop-token']!==DESKTOP_TOKEN) return json(res,{ok:false,error:'仅允许本机客户端访问'},403);
       const origin=req.headers.origin; if(origin&&origin!=='http://127.0.0.1:'+actualPort) return json(res,{ok:false,error:'来源不受信任'},403);
@@ -452,7 +463,7 @@ try {
 } catch(e) { console.error('数据迁移未完成：'+e.message); process.exitCode=1; }
 server.listen(PORT,'127.0.0.1',()=>{
   actualPort=server.address().port;
-  console.log(JSON.stringify({event:'ready',port:actualPort,app:'dy-lead-app',version:'2.5.2'}));
+  console.log(JSON.stringify({event:'ready',port:actualPort,app:'dy-lead-app',version:'2.5.3'}));
   if(process.send) process.send({type:'ready',port:actualPort,dataDir:path.resolve(store.DATA_DIR)});
   setInterval(()=>license.syncTime().catch(()=>{}),60000).unref();
 });

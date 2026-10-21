@@ -113,7 +113,7 @@ function runStatic() {
 // 浏览器 E2E 与普通单测分开跑：UI 用例对时序敏感，和 40 多个文件并行时会因 CPU
 // 争用产生假失败。浏览器批次串行执行，并允许一次重试（仍失败即判失败）。
 // account-login-scan 含真实 Chromium 用例，并行时同样因 CPU 争用超时，归入串行浏览器批次
-const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js', 'account-login-scan.test.js', 'keyword-stats-ui.test.js']);
+const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js', 'account-login-scan.test.js', 'keyword-stats-ui.test.js', 'inbox-ui.test.js']);
 function parseTap(output) {
   return {
     tests: Number((/# tests (\d+)/.exec(output) || [])[1] || 0),
@@ -171,7 +171,7 @@ const REQUIRED = [
   'workflow.js', 'lead-query.js', 'license.js', 'config.json', 'trusted-license.json',
   'node.exe', '抖音获客软件.exe', 'web/index.html', 'web/app.js', 'web/style.css',
   'lib/lead-fields.js', 'lib/outreach-browser.js', 'lib/dm-protocol.js', 'lib/browser-runtime.js',
-  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js', 'lib/lead-dedupe.js', 'lib/keyword-stats.js',
+  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js', 'lib/lead-dedupe.js', 'lib/keyword-stats.js', 'lib/im-inbox.js', 'lib/inbox-store.js', 'core/inbox.js', 'engine-inbox-tasks.js',
   'node_modules/playwright-core/package.json', 'node_modules/ws/package.json',
   'resources/app/main.js', 'resources/app/preload.js', 'resources/app/account-browser-host.js',
   '使用说明.txt'

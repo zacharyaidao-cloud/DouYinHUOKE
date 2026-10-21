@@ -527,6 +527,15 @@ body.browser-workspace .content { padding-bottom:16px; }
 .kw-stats-wrap td { vertical-align:top; }
 .kw-stats-wrap th.kw-check, .kw-stats-wrap td.kw-check { width:64px; white-space:nowrap; }
 .kw-stats-actions { gap:8px; }
+.inbox-wrap { max-height:620px; }
+.inbox-wrap table { min-width:980px; }
+.inbox-wrap td { vertical-align:top; }
+.inbox-wrap td.inbox-messages { min-width:380px; max-width:560px; white-space:normal; overflow:visible; text-overflow:clip; }
+.inbox-line { margin:2px 0; line-height:1.5; white-space:normal; overflow-wrap:anywhere; }
+.inbox-line.peer { font-weight:600; }
+.inbox-line.system { opacity:.55; font-size:12px; }
+.inbox-unread td { background:#fff8e6; }
+.inbox-badge { display:inline-block; padding:0 6px; border-radius:9px; background:#e4572e; color:#fff; font-size:12px; }
 .search-results-wrap table { min-width:1000px; }
 .collection-first-line,.collection-last-time { display:block; min-height:22px; line-height:22px; white-space:nowrap; }
 .collection-last-time { font-variant-numeric:tabular-nums; }

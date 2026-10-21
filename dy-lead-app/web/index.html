@@ -78,6 +78,7 @@
       <a data-page="browser"><span class="nav-icon" aria-hidden="true">▣</span>账号浏览器</a>
       <a data-page="collect"><span class="nav-icon" aria-hidden="true">↓</span>采集获客</a>
       <a data-page="leads"><span class="nav-icon" aria-hidden="true">▤</span>判断与执行</a>
+      <a data-page="inbox"><span class="nav-icon" aria-hidden="true">✉</span>私信消息</a>
       <a data-page="settings"><span class="nav-icon" aria-hidden="true">⚙</span>设置</a>
       <a data-page="logs"><span class="nav-icon" aria-hidden="true">≡</span>操作日志</a>
     </nav>
@@ -381,6 +382,15 @@
     </section>
 
     <!-- 日志 -->
+    <section id="page-inbox" class="page hidden">
+      <div class="page-heading"><div class="section-kicker">INBOX</div><h2>私信消息 <span class="hint" id="inbox-count"></span></h2><p>汇总各账号收到的私信回复。检查时只打开私信页读取会话，不点开会话、不发送；我们私信过的线索回复后自动标记“已回复”，不会再被重复私信。</p></div>
+      <div class="row multi-collect-row"><span class="multi-collect-label">检查账号</span><span id="inbox-accounts" class="multi-collect-accounts"></span><button id="btn-inbox-scan" class="primary">检查私信</button><button id="btn-inbox-stop" class="danger">停止</button></div>
+      <div id="inbox-feedback" class="task-box hidden" role="status" aria-live="polite"></div>
+      <div class="row"><label for="inbox-filter">显示</label><select id="inbox-filter"><option value="peer">对方发过消息的会话</option><option value="unread">只看有未读的</option><option value="lead">只看我们私信过的线索</option></select><span id="inbox-scanned" class="hint"></span></div>
+      <div class="table-wrap inbox-wrap"><table class="tbl"><thead><tr><th>账号</th><th>对方</th><th>最近消息</th><th>对方最近发言</th><th>线索</th><th></th></tr></thead><tbody id="inbox-list"></tbody></table></div>
+      <div class="note">第一次检查某个账号只建立基线（不把账号原有聊天标成新消息）；之后对方新发的消息显示“条新”。回复请在该账号的浏览器里进行。</div>
+    </section>
+
     <section id="page-logs" class="page hidden">
       <div class="page-heading"><div class="section-kicker">ACTIVITY</div><h2>操作日志</h2><p>查看任务进度、执行结果与需要人工处理的提示。</p></div>
       <div class="row"><label>账号</label><select id="log-account"></select><button id="btn-refresh-log" class="normal">刷新</button></div>

@@ -67,11 +67,21 @@ function createDmDistribution({ store, taskState, setTask, failTask, checkpoint,
   }
   function markFrequent(state, accountId, settings, opDay, now) {
     const entry = state[String(accountId)] || (state[String(accountId)] = {});
+    const sentToday = Math.max(0, Number(store.getDailyUsage(accountId).dm) || 0);
+    // 冷却结束后一条都没发出去就又频繁（冷却后首条即被拒）：平台的“当日额度”与“频繁”回执相同，按今日上限停用。
+    // 2026-10-21 实测：当日约 30 条后安静 3.5 小时仍是同一回执，继续每小时试探只会延长限制。
+    // （冷却期内账号不会被派发，所以同一天的再次频繁一定发生在冷却之后）
+    const noProgressAfterCooldown = entry.opDay === opDay && Number(entry.frequentCountToday) > 0
+      && entry.dmAtFrequent != null && Number.isFinite(Number(entry.dmAtFrequent)) && sentToday <= Number(entry.dmAtFrequent);
     entry.opDay = opDay;
     entry.frequentCountToday = (Number(entry.frequentCountToday) || 0) + 1;
     entry.frequentUntil = now + signals.cooldownFor(settings.dm.frequentCooldownSec, entry.frequentCountToday - 1) * 1000;
+    entry.dmAtFrequent = sentToday;
     entry.lastStopReason = '平台提示操作频繁';
-    if (entry.frequentCountToday > Math.max(0, Number(settings.dm.maxFrequentRetriesPerDay) || 2)) {
+    if (noProgressAfterCooldown) {
+      entry.disabledUntil = store.nextResetMs();
+      entry.lastStopReason = '冷却后首条仍频繁，按今日上限停用';
+    } else if (entry.frequentCountToday > Math.max(0, Number(settings.dm.maxFrequentRetriesPerDay) || 2)) {
       entry.disabledUntil = store.nextResetMs();
       entry.lastStopReason = '频繁次数超限，今日停用';
     }

@@ -504,3 +504,28 @@ test('分发保存账号状态时不覆盖批次中写入的强制休息计数',
   assert.ok(entry.frequentUntil > 0, '频繁冷却已记录');
   assert.equal(entry.dmSession && entry.dmSession.count, 3, 'runTask 写入的强制休息计数保留');
 });
+
+test('分发：冷却结束后首批仍频繁（期间一条没发出）→ 按今日上限停用，不再每小时试探', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5009, count: 6 }]);
+  const calls = [];
+  const frequent = { ok: false, error: '操作频繁，请稍后再试', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] };
+  const f = makeFixture({ fakeClock: true, recordUsage: true, trackCalls: calls, responses: { '1': [frequent, frequent, frequent] } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  const state = store.getDmAccountState()['1'];
+  assert.equal(calls.length, 2, '首批 + 冷却后 1 次，之后不再试');
+  assert.ok(state.disabledUntil > f.clock.now(), '今日停用');
+  assert.equal(state.lastStopReason, '冷却后首条仍频繁，按今日上限停用');
+  assert.equal(result.unassigned, 6, '用户全部保留待分配，明天或换号再发');
+});
+
+test('分发：冷却后先发出几条再频繁 → 仍是普通冷却，不判今日上限', async () => {
+  freshSettings();
+  seedLeads([1], [{ id: 5010, count: 6 }]);
+  const frequent = { ok: false, error: '操作频繁，请稍后再试', errorCode: 'PLATFORM_RESTRICTED', processedLeadIds: [] };
+  const f = makeFixture({ fakeClock: true, recordUsage: true, responses: { '1': [frequent] } });
+  const result = await f.dist.dmDistributionTask({ poolAccounts: ['1'], filters: { f: 'all' } });
+  const state = store.getDmAccountState()['1'];
+  assert.ok(!state.disabledUntil || state.disabledUntil <= f.clock.now(), '冷却后恢复发送，不停用');
+  assert.equal(result.success, 6);
+});

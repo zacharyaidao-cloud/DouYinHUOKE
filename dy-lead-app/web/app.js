@@ -1603,6 +1603,59 @@ function renderSearchFeedback() {
     box.className = 'task-box hidden';
   }
 }
+/* ---------- 搜索输入草稿：关键词与搜索选项自动保存到本机，重启或刷新后恢复 ---------- */
+const SEARCH_DRAFT_FIELDS = { keywords: 's-kws', workType: 's-type', minComments: 's-minc', publishedWithinDays: 's-days', maxPages: 's-maxp' };
+let searchDraftTimer = null, searchDraftLoaded = false;
+function searchDraftValues() { return Object.fromEntries(Object.entries(SEARCH_DRAFT_FIELDS).map(([key, id]) => [key, $(id).value])); }
+function saveSearchDraft() {
+  clearTimeout(searchDraftTimer);
+  searchDraftTimer = setTimeout(() => { api('/search/draft', { method: 'POST', body: searchDraftValues() }).catch(() => {}); }, 600);
+}
+async function loadSearchDraft() {
+  if (searchDraftLoaded) return;
+  searchDraftLoaded = true;
+  try {
+    const draft = ((await api('/search/draft')) || {}).draft || {};
+    for (const [key, id] of Object.entries(SEARCH_DRAFT_FIELDS)) {
+      if (draft[key] == null || draft[key] === '') continue;
+      const element = $(id);
+      // 只在用户还没输入时恢复，不覆盖正在输入的内容
+      if (key === 'keywords' && element.value.trim()) continue;
+      if (element.tagName === 'SELECT' && ![...element.options].some(option => option.value === draft[key])) continue;
+      element.value = draft[key];
+    }
+  } catch (e) { searchDraftLoaded = false; }
+}
+for (const id of Object.values(SEARCH_DRAFT_FIELDS)) { $(id).addEventListener('input', saveSearchDraft); $(id).addEventListener('change', saveSearchDraft); }
+
+/* ---------- 关键词统计 ---------- */
+function renderKeywordStats(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  $('kw-stats-count').textContent = list.length ? `共 ${list.length} 个关键词` : '';
+  if (!list.length) { $('kw-stats-list').innerHTML = '<tr><td colspan="12" class="hint">还没有搜索记录（每次搜索后自动统计）</td></tr>'; return; }
+  const n = value => Number(value) || 0;
+  $('kw-stats-list').innerHTML = list.map(row => `<tr>
+    <td><b>${esc(row.keyword)}</b><div class="hint">${row.fromHistory ? '来自以往搜索结果' : '搜过 ' + n(row.searchCount) + ' 次'}</div></td>
+    <td>${esc(row.lastSearchAt || '—')}<div class="hint">${[row.lastPages ? '翻 ' + n(row.lastPages) + ' 页' : '', row.lastPublishedWithinDays ? '近 ' + n(row.lastPublishedWithinDays) + ' 天' : '不限时间'].filter(Boolean).join('｜')}</div></td>
+    <td>${n(row.lastTotal)}</td><td>${n(row.lastWithinWeek)}</td><td>${n(row.lastKept)}<div class="hint">新增 ${n(row.lastAdded)}</div></td>
+    <td>${n(row.worksFound)}</td><td>${n(row.worksCollected)}</td><td>${n(row.comments)}</td>
+    <td>${n(row.aiDemand)}<span class="hint">（${n(row.aiDemandUsers)} 人）</span></td><td>${n(row.keywordDemand)}</td><td>${n(row.contacted)}</td>
+    <td><button class="normal kw-reuse" data-kw="${esc(row.keyword)}" title="把这个词加到搜索关键词输入框">再搜</button></td>
+  </tr>`).join('');
+}
+async function loadKeywordStats() {
+  try { renderKeywordStats(((await api('/search/keyword-stats')) || {}).rows); } catch (e) { /* 统计读取失败不打断轮询 */ }
+}
+$('kw-stats-list').addEventListener('click', event => {
+  const button = event.target.closest('.kw-reuse');
+  if (!button) return;
+  const keyword = button.dataset.kw, box = $('s-kws');
+  const current = box.value.split('\n').map(k => k.trim()).filter(Boolean);
+  if (!current.includes(keyword)) { box.value = [...current, keyword].join('\n'); saveSearchDraft(); }
+  box.focus();
+});
+$('search-options').addEventListener('toggle', () => { if ($('search-options').open) { loadSearchDraft(); loadKeywordStats(); } });
+
 $('btn-search-start').addEventListener('click', async () => {
   const keywords = String($('s-kws').value || '').split('\n').map(k => k.trim()).filter(Boolean);
   if (!keywords.length) { $('search-feedback').className = 'task-box err'; $('search-feedback').textContent = '请先输入至少一个搜索关键词'; return; }
@@ -2138,6 +2191,7 @@ async function refresh() {
       renderSearchFeedback();
       if ($('search-options') && $('search-options').open) {
         try { state.searchResults = ((await api('/search/results')) || {}).results || []; renderSearchResults(); } catch (e) { /* 本地结果读取失败不打断轮询 */ }
+        loadSearchDraft(); loadKeywordStats();
       }
     }
     if (vis('page-leads') && pageDirty) loadActionsForm();

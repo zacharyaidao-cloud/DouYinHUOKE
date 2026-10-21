@@ -398,6 +398,9 @@ async function handleApi(req,res,pathname) {
   }
   if(method==='POST'&&pathname==='/api/collect/start') { const b=await readBody(req); requireAccount(b.accountId); startTask(session,()=>engine.collectTask(b.accountId,b.links||b.videoUrls||b.videoUrl)); return json(res,{ok:true,started:true}); }
   if(method==='GET'&&pathname==='/api/search/results') return json(res,{ok:true,results:store.getSearchResults()});
+  if(method==='GET'&&pathname==='/api/search/keyword-stats') return json(res,{ok:true,rows:require('./lib/keyword-stats').summarizeKeywords(store.getKeywordStats(),store.getLeads(),store.getVideos(),store.getSearchResults())});
+  if(method==='GET'&&pathname==='/api/search/draft') return json(res,{ok:true,draft:store.getSearchDraft()});
+  if(method==='POST'&&pathname==='/api/search/draft') { const b=await readBody(req); return json(res,{ok:true,draft:store.setSearchDraft(b)}); }
   if(method==='POST'&&pathname==='/api/search/start') { const b=await readBody(req); requireAccount(b.accountId); startTask(session,()=>engine.searchTask(b.accountId,b)); return json(res,{ok:true,started:true}); }
   if(method==='POST'&&pathname==='/api/search/clear') { if(engine.taskState.running||engine.taskState.distributionActive) return json(res,{ok:false,error:'任务期间不能清空搜索结果'},409); store.setSearchResults([]); return json(res,{ok:true}); }
   if(method==='GET'&&pathname==='/api/ai/models') { return json(res,{ok:true,...await aiAssist(session,options=>ai.listModels(store.getSettings(),{...options,forceRefresh:true}))}); }

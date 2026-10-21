@@ -141,6 +141,8 @@ function createSearchTasks({ store, taskState, setTask, failTask, makeScheduler,
           const typed = (result.works || []).filter(work => !(opts.workType === 'video' || opts.workType === 'note') || work.workType === opts.workType);
           const { kept, dropped } = filterWorks(typed, { publishedWithinDays: opts.publishedWithinDays, minComments: opts.minCommentCount });
           const added = store.addSearchResults(keyword, opts.workType, kept);
+          if (result.ok || typed.length) store.recordKeywordSearch(keyword, { works: typed, kept, added, pages: result.pages || 0, workType: opts.workType,
+            publishedWithinDays: opts.publishedWithinDays, minComments: opts.minCommentCount, stopReason: result.stopReason || result.reason || '' });
           summary.works += added;
           keywordIndex++;
           summary.completed = keywordIndex;

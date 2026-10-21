@@ -113,7 +113,7 @@ function runStatic() {
 // 浏览器 E2E 与普通单测分开跑：UI 用例对时序敏感，和 40 多个文件并行时会因 CPU
 // 争用产生假失败。浏览器批次串行执行，并允许一次重试（仍失败即判失败）。
 // account-login-scan 含真实 Chromium 用例，并行时同样因 CPU 争用超时，归入串行浏览器批次
-const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js', 'account-login-scan.test.js']);
+const BROWSER_TESTS = new Set(['ui.test.js', 'collection-entry-ui.test.js', 'embedded-browser-ui.test.js', 'account-login-scan.test.js', 'keyword-stats-ui.test.js']);
 function parseTap(output) {
   return {
     tests: Number((/# tests (\d+)/.exec(output) || [])[1] || 0),

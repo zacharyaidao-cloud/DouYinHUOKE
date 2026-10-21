@@ -72,7 +72,9 @@ const F = {
   checkpoint: path.join(DATA_DIR, 'task-checkpoint.json'),
   searchResults: path.join(DATA_DIR, 'search-results.json'),
   dmAccountState: path.join(DATA_DIR, 'dm-account-state.json'),
-  contactAllocation: path.join(DATA_DIR, 'contact-allocation.json')
+  contactAllocation: path.join(DATA_DIR, 'contact-allocation.json'),
+  keywordStats: path.join(DATA_DIR, 'keyword-stats.json'),
+  searchDraft: path.join(DATA_DIR, 'search-draft.json')
 };
 
 const LEGACY_BUILTIN_PROMPT = '依据公司业务、目标客户、明确需求和容易误判的说明，判断评论用户是否存在亚马逊账户申诉、激活、解封或资金解冻的服务需求。描述自己的相关账户问题，或结合视频上下文询问处理方式、服务费用、联系方式，且符合业务范围时判为“是”。明确无自身需求、同行广告、招代理、卖货或其他平台问题判为“否”。只有泛泛提问、围观、质疑，或需求对象无法确定时判为“待确认”，不得仅凭关键词认定需求。UID和昵称仅用于标识上下文，不能作为需求证据；不能承诺申诉成功或编造用户经历。评分表示现有需求证据强弱，理由指出具体评论证据。\n\n【用户评论】{需求内容}\n【评论时间】{评论时间}\n【用户UID】{UID}\n【用户名称】{昵称}\n【所在视频描述】{视频描述}';
@@ -275,6 +277,21 @@ function getSearchResults() {
   } catch (e) { return []; }
 }
 function setSearchResults(list) { writeJson(F.searchResults, Array.isArray(list) ? list : []); }
+
+/** 关键词统计（见 lib/keyword-stats.js）与搜索输入草稿（关键词与搜索选项，重启后恢复） */
+function getKeywordStats() { const raw = readJson(F.keywordStats, {}); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; }
+function recordKeywordSearch(keyword, run) {
+  const { recordKeywordRun } = require('./lib/keyword-stats');
+  writeJson(F.keywordStats, recordKeywordRun(getKeywordStats(), keyword, { ...run, at: nowStr() }));
+}
+const DRAFT_FIELDS = { keywords: 'string', workType: 'string', minComments: 'string', publishedWithinDays: 'string', maxPages: 'string' };
+function getSearchDraft() { const raw = readJson(F.searchDraft, {}); return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}; }
+function setSearchDraft(input = {}) {
+  const draft = {};
+  for (const [key, type] of Object.entries(DRAFT_FIELDS)) if (input[key] != null) draft[key] = String(input[key]).slice(0, key === 'keywords' ? 5000 : 20);
+  writeJson(F.searchDraft, { ...draft, savedAt: nowStr() });
+  return draft;
+}
 function addSearchResults(keyword, workType, works) {
   const list = getSearchResults();
   const seen = new Set(list.map(x => String(x.awemeId)));
@@ -395,7 +412,7 @@ module.exports = {
   getSettings, setSettings, normalizeSettings, getIndustryProfile, getVideos, setVideos,
   getCooldowns, setCooldowns, getDaily, setDaily,
   getPlans, setPlans, getTaskCheckpoint, setTaskCheckpoint,
-  getSearchResults, setSearchResults, addSearchResults,
+  getSearchResults, setSearchResults, addSearchResults, getKeywordStats, recordKeywordSearch, getSearchDraft, setSearchDraft,
   getDmAccountState, setDmAccountState, getAllocations, setAllocations,
   todayStr, nowStr, opDayStr, nextResetMs, getDailyUsage, bumpDaily,
   log, tailLog, profileDir, DEFAULT_SETTINGS

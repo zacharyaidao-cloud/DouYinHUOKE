@@ -643,7 +643,7 @@ test('POST筛选和勾选仅导出相关作品，全部及旧GET保留无评论�
   for(const body of [{scope:'all'},undefined]) { const worksOnly=text(await f.request('/api/export',body,token)); assert.match(worksOnly,/甲关联作品/);assert.match(worksOnly,/乙关联作品/);assert.match(worksOnly,/孤立作品/); }
   const noFilteredLeads=text(await f.request('/api/export',{scope:'filters',filters:{}},token));assert.doesNotMatch(noFilteredLeads,/甲关联作品|乙关联作品|孤立作品/);
   assert.equal((await f.request('/api/export',{scope:'all'})).code,401);
-  assert.equal((await f.request('/health')).body.version,'2.5.0');
+  assert.equal((await f.request('/health')).body.version,'2.5.1');
 });
 test('人工核验同步Outcome解除待核验锁，成功仅记一次且保留另一个动作待核验',async()=>{
   const f=fixture();f.setLeads([{id:1,uid:'u1',accountId:'1',dmState:'pending_verification',dmOutcome:'pending_verification',followState:'pending_verification',dmCount:1,dmAttemptAccountId:'1'},{id:2,uid:'u1',accountId:'2',dmState:'pending_verification',dmOutcome:'pending_verification',dmCount:1,followState:'pending_verification'}]);

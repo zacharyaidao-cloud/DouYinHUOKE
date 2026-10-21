@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-10-20T23:20:06.804Z",
+  "verifiedAt": "2026-10-21T05:56:15.097Z",
   "source": "isolated local mock with source defaults",
   "reports": [
     {
@@ -102,7 +102,7 @@
       "width": 1360,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 86,
+      "textCount": 100,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
@@ -174,7 +174,7 @@
       "width": 1100,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 87,
+      "textCount": 101,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
@@ -246,7 +246,7 @@
       "width": 760,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 85,
+      "textCount": 99,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],
@@ -318,7 +318,7 @@
       "width": 390,
       "page": "collect",
       "bodyFontSize": 16,
-      "textCount": 83,
+      "textCount": 97,
       "minTextFontSize": 14,
       "minContrast": 5.72,
       "lowContrast": [],

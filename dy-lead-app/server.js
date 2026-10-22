@@ -409,6 +409,34 @@ async function handleApi(req,res,pathname) {
       return json(res,{ok:true});
     }
   }
+  // 私信实时同步（聊天界面）
+  if(pathname==='/api/chat/state'&&method==='GET') {
+    const query=new URL(req.url,'http://127.0.0.1').searchParams;
+    const leads=store.getLeads(), bySec=new Map(); for(const l of leads) if(l.uid&&!bySec.has(l.uid)) bySec.set(l.uid,l);
+    const inbox=store.getInbox(), status=engine.chat.status();
+    const conversations=require('./lib/inbox-store').listChats(inbox,{accounts:store.getAccounts(),leadsBySecUid:bySec,onlyPeer:query.get('onlyPeer')==='1'});
+    return json(res,{ok:true,version:status.version,runtimes:status.runtimes,conversations});
+  }
+  if(pathname==='/api/chat/messages'&&method==='GET') {
+    const query=new URL(req.url,'http://127.0.0.1').searchParams;
+    const account=store.getInbox().accounts[String(query.get('accountId')||'')];
+    const conv=account&&account.conversations[String(query.get('peerUid')||'')];
+    if(!conv) return json(res,{ok:false,error:'没有这个会话'},404);
+    const lead=conv.peerSecUid?store.getLeads().find(l=>l.uid===conv.peerSecUid):null;
+    return json(res,{ok:true,conversation:{accountId:query.get('accountId'),peerUid:conv.peerUid,peerSecUid:conv.peerSecUid||'',nickname:conv.nickname||(lead&&lead.nickname)||'',inbox:conv.inbox||'',
+      followerStatus:conv.followerStatus??null,lead:lead?{id:lead.id,nickname:lead.nickname,replied:!!lead.replied,demand:String(lead.demand||'').slice(0,200),dmLastAt:lead.dmLastAt||''}:null},messages:conv.messages||[]});
+  }
+  if(parts[1]==='chat'&&method==='POST') {
+    const b=await readBody(req);
+    if(parts[2]==='connect'||parts[2]==='disconnect') {
+      const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:(store.getAccounts()||[]).map(a=>String(a.id));
+      for(const id of ids) requireAccount(id);
+      for(const id of ids) engine.chat[parts[2]](id).catch(()=>{});
+      return json(res,{ok:true,accountIds:ids});
+    }
+    if(parts[2]==='open') { requireAccount(b.accountId); return json(res,await engine.chat.openConversation(String(b.accountId),String(b.peerUid||''))); }
+    if(parts[2]==='send') { requireAccount(b.accountId); return json(res,await engine.chat.send(String(b.accountId),String(b.peerUid||''),String(b.text||''))); }
+  }
   // 私信归集：检查（只读）、列表、标记已读
   if(method==='POST'&&pathname==='/api/inbox/scan') { const b=await readBody(req); const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:(store.getAccounts()||[]).map(a=>String(a.id)); for(const id of ids) requireAccount(id); startTask(session,()=>engine.inboxTask(ids)); return json(res,{ok:true,started:true}); }
   if(method==='GET'&&pathname==='/api/inbox') {

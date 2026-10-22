@@ -171,7 +171,7 @@ const REQUIRED = [
   'workflow.js', 'lead-query.js', 'license.js', 'config.json', 'trusted-license.json',
   'node.exe', '抖音获客软件.exe', 'web/index.html', 'web/app.js', 'web/style.css',
   'lib/lead-fields.js', 'lib/outreach-browser.js', 'lib/dm-protocol.js', 'lib/browser-runtime.js',
-  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js', 'lib/lead-dedupe.js', 'lib/keyword-stats.js', 'lib/im-inbox.js', 'lib/inbox-store.js', 'core/inbox.js', 'engine-inbox-tasks.js',
+  'engine-core-collect.js', 'core/session.js', 'core/search.js', 'core/collect.js', 'core/follow.js', 'core/pacing.js', 'lib/page-comments.js', 'lib/competitor-screen.js', 'lib/work-record.js', 'lib/lead-dedupe.js', 'lib/keyword-stats.js', 'lib/im-inbox.js', 'lib/inbox-store.js', 'core/inbox.js', 'engine-inbox-tasks.js', 'engine-chat.js',
   'node_modules/playwright-core/package.json', 'node_modules/ws/package.json',
   'resources/app/main.js', 'resources/app/preload.js', 'resources/app/account-browser-host.js',
   '使用说明.txt'

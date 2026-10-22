@@ -1632,82 +1632,168 @@ function renderSearchFeedback() {
     box.className = 'task-box hidden';
   }
 }
-/* ---------- 私信消息（归集，只读） ---------- */
-const inboxAccountsChecked = new Set();
-let inboxAccountsInit = false, inboxLoadBusy = false;
-function renderInboxAccounts() {
-  const box = $('inbox-accounts');
-  if (!box) return;
-  const accounts = state.accounts || [];
-  if (!inboxAccountsInit && accounts.length) { accounts.forEach(a => inboxAccountsChecked.add(String(a.id))); inboxAccountsInit = true; }
-  for (const id of [...inboxAccountsChecked]) if (!accounts.some(a => String(a.id) === id)) inboxAccountsChecked.delete(id);
-  box.innerHTML = accounts.length ? accounts.map(a => `<label><input type="checkbox" data-inbox-account="${esc(a.id)}" ${inboxAccountsChecked.has(String(a.id)) ? 'checked' : ''}>${esc(a.name)}</label>`).join('')
-    : '<span class="hint">请先在账号管理添加并登录账号</span>';
-}
-$('inbox-accounts').addEventListener('change', event => {
-  const id = event.target.dataset && event.target.dataset.inboxAccount;
-  if (!id) return;
-  if (event.target.checked) inboxAccountsChecked.add(id); else inboxAccountsChecked.delete(id);
-});
-function inboxTime(ms) {
+/* ---------- 私信消息（IM 聊天界面：账号标签、会话列表、气泡聊天、输入框） ---------- */
+const chatUi = { version: -1, runtimes: {}, conversations: [], account: 'all', selected: null, messagesKey: '', conversation: null, sending: false, polling: false };
+const CHAT_COLORS = ['#5b8ff9', '#5ad8a6', '#f6bd16', '#e8684a', '#6dc8ec', '#9270ca', '#ff9d4d', '#269a99', '#ff99c3'];
+function chatColor(text) { let h = 0; for (const ch of String(text || '')) h = (h * 31 + ch.codePointAt(0)) >>> 0; return CHAT_COLORS[h % CHAT_COLORS.length]; }
+function chatAvatar(name) { const n = String(name || '?'); return `<div class="chat-avatar" style="background:${chatColor(n)}">${esc(Array.from(n)[0] || '?')}</div>`; }
+function chatTime(ms, full = false) {
   if (!ms) return '';
-  const d = new Date(ms), p = n => String(n).padStart(2, '0');
-  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const d = new Date(ms), now = new Date(), p = n => String(n).padStart(2, '0');
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, now)) return hm;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (sameDay(d, y)) return '昨天 ' + (full ? hm : '');
+  return `${d.getMonth() + 1}-${p(d.getDate())}` + (full ? ' ' + hm : '');
 }
-function renderInboxFeedback() {
-  const box = $('inbox-feedback'), task = state.task || {};
-  if (task.kind !== 'inbox') { box.className = 'task-box hidden'; return; }
-  box.className = 'task-box ' + (task.running ? 'running' : 'ok');
-  box.textContent = (task.running ? '进行中 · ' : '') + (task.status || '');
+function chatDateLabel(ms) {
+  const d = new Date(ms), now = new Date();
+  const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  return days === 0 ? '今天' : days === 1 ? '昨天' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function renderInbox() {
-  const data = state.inbox || { rows: [], scanned: {} };
-  const filter = $('inbox-filter').value;
-  const rows = data.rows.filter(row => filter === 'unread' ? row.unread > 0 : filter === 'lead' ? !!row.lead : true);
-  const unread = data.rows.reduce((n, row) => n + (row.unread > 0 ? 1 : 0), 0);
-  $('inbox-count').textContent = data.rows.length ? `${data.rows.length} 个会话${unread ? `，${unread} 个有未读` : ''}` : '';
-  const names = new Map((state.accounts || []).map(a => [String(a.id), a.name]));
-  const scanned = Object.entries(data.scanned || {}).map(([id, s]) => `${names.get(id) || id}：${inboxTime(s.scannedAt)}`);
-  $('inbox-scanned').textContent = scanned.length ? '上次检查 ' + scanned.join('｜') : '还没有检查过私信';
-  $('inbox-list').innerHTML = rows.map(row => {
-    const name = row.nickname || (row.lead && row.lead.nickname) || ('UID ' + row.peerUid);
-    const home = row.peerSecUid ? `<a href="https://www.douyin.com/user/${esc(encodeURIComponent(row.peerSecUid))}" target="_blank" rel="noopener noreferrer">主页</a>` : '';
-    const lines = (row.messages || []).slice(-4).map(m => `<div class="inbox-line ${m.from === 'peer' ? 'peer' : 'me'}${m.kind === 'system' ? ' system' : ''}"><span class="hint">${m.from === 'peer' ? '对方' : '我'} ${esc(inboxTime(m.at))}</span> ${esc(m.text || '')}</div>`).join('');
-    const lead = row.lead ? `<span class="lead-line">线索 #${esc(row.lead.id)}</span><span class="lead-line ${row.lead.replied ? 'ok-hint' : 'hint'}">${row.lead.replied ? '已回复' : '已私信'}</span>` : '<span class="hint">非线索</span>';
-    return `<tr class="${row.unread ? 'inbox-unread' : ''}">
-      <td>${esc(row.accountName)}<div class="hint">${row.inbox === 'stranger' ? '陌生人消息' : '消息'}</div></td>
-      <td><b>${esc(name)}</b>${row.unread ? ` <span class="inbox-badge">${esc(row.unread)} 条新</span>` : ''}<div>${home}</div></td>
-      <td class="inbox-messages">${lines}</td>
-      <td>${esc(inboxTime(row.lastPeerAt))}</td>
-      <td>${lead}</td>
-      <td>${row.unread ? `<button class="normal" data-inbox-read="${esc(row.accountId)}" data-peer="${esc(row.peerUid)}">标为已读</button>` : ''}</td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="6" class="empty-cell">${data.rows.length ? '当前筛选下没有会话' : '还没有收到回复；点“检查私信”读取各账号的私信页'}</td></tr>`;
+const chatStateLabels = { online: '在线', connecting: '连接中', error: '连接失败', offline: '未连接' };
+function chatAccountState(id) { const r = chatUi.runtimes[String(id)]; return r ? r.state : 'offline'; }
+
+function renderChatTop() {
+  const accounts = state.accounts || [];
+  const online = accounts.filter(a => chatAccountState(a.id) === 'online').length;
+  const sync = $('chat-sync');
+  sync.className = 'chat-sync ' + (!online ? 'off' : online === accounts.length ? 'on' : 'partial');
+  sync.textContent = online ? `实时同步中 ${online}/${accounts.length} 个账号` : '未连接';
+  const unreadBy = {};
+  for (const c of chatUi.conversations) unreadBy[c.accountId] = (unreadBy[c.accountId] || 0) + (c.unread ? 1 : 0);
+  const totalUnread = Object.values(unreadBy).reduce((a, b) => a + b, 0);
+  const tab = (id, label, dot, count) => `<button class="chat-tab ${chatUi.account === id ? 'active' : ''}" data-chat-tab="${esc(id)}" role="tab">${dot}${esc(label)}${count ? `<span class="chat-count">${count}</span>` : ''}</button>`;
+  $('chat-tabs').innerHTML = tab('all', '全部', '', totalUnread) + accounts.map(a => {
+    const st = chatAccountState(a.id);
+    return tab(String(a.id), a.name, `<span class="chat-dot ${st}" title="${esc(chatStateLabels[st] || st)}"></span>`, unreadBy[String(a.id)] || 0);
+  }).join('');
 }
-async function loadInbox() {
-  if (inboxLoadBusy) return;
-  inboxLoadBusy = true;
-  try { const r = await api('/inbox'); state.inbox = { rows: r.rows || [], scanned: r.scanned || {} }; renderInbox(); }
-  catch (e) { $('inbox-scanned').textContent = '读取私信记录失败：' + (e.message || ''); }
-  finally { inboxLoadBusy = false; }
+
+function renderChatList() {
+  const q = $('chat-search').value.trim().toLowerCase(), onlyPeer = $('chat-only-peer').checked;
+  const rows = chatUi.conversations.filter(c => (chatUi.account === 'all' || c.accountId === chatUi.account) && (!onlyPeer || c.hasPeer)
+    && (!q || String(c.nickname).toLowerCase().includes(q) || String(c.last && c.last.text || '').toLowerCase().includes(q)));
+  const sel = chatUi.selected;
+  $('chat-list').innerHTML = rows.slice(0, 400).map(c => {
+    const name = c.nickname || ('UID ' + c.peerUid);
+    const preview = (c.last.from === 'me' ? '我：' : '') + (c.last.kind === 'system' ? '[提示] ' : '') + (c.last.text || '');
+    const active = sel && sel.accountId === c.accountId && sel.peerUid === c.peerUid;
+    const tags = [chatUi.account === 'all' ? `<span class="chat-tag">${esc(c.accountName)}</span>` : '', c.inbox === 'stranger' ? '<span class="chat-tag stranger">陌生人</span>' : '',
+      c.lead ? `<span class="chat-tag ${c.lead.replied ? 'replied' : 'lead'}">${c.lead.replied ? '已回复' : '线索'}</span>` : ''].join('');
+    return `<div class="chat-item ${active ? 'active' : ''}" role="option" data-chat-open="${esc(c.accountId)}" data-peer="${esc(c.peerUid)}">${chatAvatar(name)}
+      <div class="chat-item-main"><div class="chat-item-top"><span class="chat-item-name">${esc(name)}</span><span class="chat-item-time">${esc(chatTime(c.lastAt))}</span></div>
+      <div class="chat-item-bottom"><span class="chat-item-preview">${esc(preview)}</span>${c.unread ? `<span class="chat-count">${c.unread}</span>` : ''}</div>
+      ${tags ? `<div class="chat-item-tags">${tags}</div>` : ''}</div></div>`;
+  }).join('') || `<div class="chat-empty" style="padding:30px">${chatUi.conversations.length ? '没有符合条件的会话' : '还没有会话；点“连接全部账号”开始同步'}</div>`;
 }
-$('inbox-filter').addEventListener('change', renderInbox);
-$('inbox-list').addEventListener('click', async event => {
-  const button = event.target.closest('[data-inbox-read]');
-  if (!button) return;
-  await api('/inbox/read', { method: 'POST', body: { accountId: button.dataset.inboxRead, peerUid: button.dataset.peer } });
-  loadInbox();
-});
-$('btn-inbox-scan').addEventListener('click', async () => {
-  const accountIds = [...inboxAccountsChecked];
-  if (!accountIds.length) { $('inbox-feedback').className = 'task-box err'; $('inbox-feedback').textContent = '请先勾选要检查的账号'; return; }
+
+function renderChatPane(messages) {
+  const sel = chatUi.selected, conv = chatUi.conversation;
+  $('chat-empty').classList.toggle('hidden', !!sel);
+  $('chat-pane').classList.toggle('hidden', !sel);
+  if (!sel || !conv) return;
+  const name = conv.nickname || ('UID ' + conv.peerUid);
+  const account = (state.accounts || []).find(a => String(a.id) === sel.accountId);
+  $('chat-head-avatar').outerHTML = `<div id="chat-head-avatar" class="chat-avatar" style="background:${chatColor(name)}">${esc(Array.from(name)[0] || '?')}</div>`;
+  $('chat-head-name').textContent = name;
+  const home = conv.peerSecUid ? ` · <a href="https://www.douyin.com/user/${esc(encodeURIComponent(conv.peerSecUid))}" target="_blank" rel="noopener noreferrer">主页</a>` : '';
+  const lead = conv.lead ? ` · 线索 #${esc(conv.lead.id)}${conv.lead.replied ? '（已回复）' : ''}${conv.lead.demand ? '：' + esc(conv.lead.demand.slice(0, 40)) : ''}` : '';
+  $('chat-head-sub').innerHTML = `${esc(account ? account.name : sel.accountId)}${conv.inbox === 'stranger' ? ' · 陌生人消息' : ''}${home}${lead}`;
+  const st = chatAccountState(sel.accountId);
+  $('chat-head-status').innerHTML = `<span class="chat-dot ${st}"></span> 账号${esc(chatStateLabels[st] || st)}`;
+  $('chat-head-status').style.display = 'flex'; $('chat-head-status').style.alignItems = 'center'; $('chat-head-status').style.gap = '6px';
+  const box = $('chat-messages');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  let lastDay = '', html = '';
+  for (const m of messages) {
+    if (m.kind === 'system' && !m.text) continue;
+    const day = chatDateLabel(m.at);
+    if (day !== lastDay) { html += `<div class="chat-date">${esc(day)}</div>`; lastDay = day; }
+    if (m.kind === 'system') { html += `<div class="chat-system">${esc(m.text)}</div>`; continue; }
+    const me = m.from === 'me';
+    const statusText = m.status === 'sending' ? '发送中…' : m.status === 'failed' ? '未送达：' + (m.reason || '失败') : m.status === 'pending' ? '待核验：' + (m.reason || '') : '';
+    html += `<div class="chat-row ${me ? 'me' : 'peer'}">${me ? chatAvatar(account ? account.name : '我') : chatAvatar(name)}
+      <div class="chat-bubble-wrap"><div class="chat-bubble">${esc(m.text)}</div><div class="chat-meta ${m.status === 'failed' ? 'failed' : ''}">${esc(chatTime(m.at, true))}${statusText ? ' · ' + esc(statusText) : ''}</div></div></div>`;
+  }
+  box.innerHTML = html || '<div class="chat-empty">还没有消息</div>';
+  if (atBottom || chatUi.scrollToEnd) { box.scrollTop = box.scrollHeight; chatUi.scrollToEnd = false; }
+  const online = st === 'online';
+  $('btn-chat-send').disabled = !online || chatUi.sending;
+  $('chat-compose-hint').textContent = online ? 'Enter 发送，Shift + Enter 换行；以平台回执为准显示是否送达' : '账号未连接，连接后才能发送';
+}
+
+async function loadChatMessages(force = false) {
+  const sel = chatUi.selected;
+  if (!sel) { renderChatPane([]); return; }
   try {
-    await api('/inbox/scan', { method: 'POST', body: { accountIds } });
-    $('inbox-feedback').className = 'task-box running'; $('inbox-feedback').textContent = '已开始检查私信（只读，不发送）';
-    refresh();
-  } catch (error) { $('inbox-feedback').className = 'task-box err'; $('inbox-feedback').textContent = error.message || '启动失败'; }
+    const r = await api(`/chat/messages?accountId=${encodeURIComponent(sel.accountId)}&peerUid=${encodeURIComponent(sel.peerUid)}`);
+    if (chatUi.selected !== sel) return;
+    const msgs = r.messages || [];
+    const key = msgs.length + '|' + msgs.map(m => m.id + (m.status || '')).slice(-5).join(',') + '|' + chatAccountState(sel.accountId);
+    chatUi.conversation = r.conversation;
+    if (force || key !== chatUi.messagesKey) { chatUi.messagesKey = key; renderChatPane(msgs); }
+  } catch (_) { /* 会话可能刚被清理，保持界面 */ }
+}
+
+async function loadChatState() {
+  if (chatUi.polling) return;
+  chatUi.polling = true;
+  try {
+    const r = await api('/chat/state');
+    const changed = r.version !== chatUi.version;
+    chatUi.runtimes = r.runtimes || {};
+    chatUi.conversations = r.conversations || [];
+    chatUi.version = r.version;
+    renderChatTop();
+    if (changed || !$('chat-list').children.length) renderChatList();
+    await loadChatMessages();
+  } catch (_) { /* 轮询失败不打断界面 */ }
+  finally { chatUi.polling = false; }
+}
+
+$('chat-tabs').addEventListener('click', event => {
+  const tab = event.target.closest('[data-chat-tab]');
+  if (!tab) return;
+  chatUi.account = tab.dataset.chatTab;
+  renderChatTop(); renderChatList();
 });
-$('btn-inbox-stop').addEventListener('click', async () => { await api('/tasks/stop', { method: 'POST' }); refresh(); });
+$('chat-search').addEventListener('input', renderChatList);
+$('chat-only-peer').addEventListener('change', renderChatList);
+$('chat-list').addEventListener('click', event => {
+  const item = event.target.closest('[data-chat-open]');
+  if (!item) return;
+  chatUi.selected = { accountId: item.dataset.chatOpen, peerUid: item.dataset.peer };
+  chatUi.messagesKey = ''; chatUi.scrollToEnd = true; chatUi.conversation = null;
+  renderChatList();
+  loadChatMessages(true);
+  // 在后台私信页打开这个会话：加载更多历史、在抖音侧标为已读（账号在线时）
+  if (chatAccountState(chatUi.selected.accountId) === 'online') api('/chat/open', { method: 'POST', body: chatUi.selected }).catch(() => {});
+  $('chat-input').focus();
+});
+async function sendChatMessage() {
+  const sel = chatUi.selected, input = $('chat-input');
+  const text = input.value.trim();
+  if (!sel || !text || chatUi.sending) return;
+  chatUi.sending = true; $('btn-chat-send').disabled = true;
+  input.value = '';
+  chatUi.scrollToEnd = true;
+  setTimeout(() => loadChatMessages(true), 300);
+  try {
+    const r = await api('/chat/send', { method: 'POST', body: { ...sel, text } });
+    if (!r.ok) $('chat-compose-hint').textContent = '未送达：' + (r.error || '失败');
+  } catch (error) { $('chat-compose-hint').textContent = '发送失败：' + (error.message || ''); }
+  finally { chatUi.sending = false; loadChatMessages(true); }
+}
+$('btn-chat-send').addEventListener('click', sendChatMessage);
+$('chat-input').addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendChatMessage(); }
+});
+$('btn-chat-connect-all').addEventListener('click', async () => { await api('/chat/connect', { method: 'POST', body: {} }).catch(() => {}); loadChatState(); });
+$('btn-chat-disconnect-all').addEventListener('click', async () => { await api('/chat/disconnect', { method: 'POST', body: {} }).catch(() => {}); loadChatState(); });
+// 页面打开时每 2.5 秒取一次变化（只在有变化时重绘）
+setInterval(() => { if (!$('page-inbox').classList.contains('hidden') && document.visibilityState !== 'hidden') loadChatState(); }, 2500);
 
 /* ---------- 搜索输入草稿：关键词与搜索选项自动保存到本机，重启或刷新后恢复 ---------- */
 const SEARCH_DRAFT_FIELDS = { keywords: 's-kws', workType: 's-type', minComments: 's-minc', publishedWithinDays: 's-days', maxPages: 's-maxp' };
@@ -2336,7 +2422,7 @@ async function refresh() {
     accountRefreshError = '';
     actionStateError = '';
     renderOverview(); renderAccounts();
-    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account'); renderExtraCollectAccounts(); renderInboxAccounts();
+    fillAccounts('col-account'); fillAccounts('act-account'); fillAccounts('log-account'); renderExtraCollectAccounts();
     renderActionStatus(); renderSelectionInfo(); renderOutreachControls(); renderWorkflowStatus();
     renderEmbeddedBrowser();
     try { state.videoHistory = ((await api('/videos')) || {}).videos || []; }
@@ -2346,7 +2432,7 @@ async function refresh() {
     if (vis('page-settings') && pageDirty) loadSettingsForm();
     if (vis('page-leads')) loadLeads();
     if (vis('page-logs')) renderLogs();
-    if (vis('page-inbox')) { renderInboxFeedback(); loadInbox(); }
+    if (vis('page-inbox')) loadChatState();
     if (vis('page-collect')) {
       if (pageDirty) loadCollectForm();
       renderLinkRows(); renderVideoHistory();

@@ -1127,6 +1127,9 @@ const { followTask, dmTask, outreachTask, openLeadProfile } = actions;
 const { createInboxTasks } = require('./engine-inbox-tasks');
 const { inboxTask } = createInboxTasks({ store, taskState, setTask, failTask, authorize, getAlive, launchAccount,
   closeAccount: id => closeAccount(id), refreshLeadStatus });
+// 私信实时同步：每个连接的账号一个后台私信页，收推送、打开会话、在软件里回复
+const { createChatRuntime } = require('./engine-chat');
+const chat = createChatRuntime({ store, authorize, getAlive, launchAccount, closeAccount: id => closeAccount(id), refreshLeadStatus });
 
 /* ===================== AI：同规则、固定范围、安全回写 ===================== */
 const { createAiTasks } = require('./engine-ai-tasks');
@@ -1167,6 +1170,7 @@ function stopTask() {
 }
 async function shutdown() {
   stopTask();
+  await chat.shutdown().catch(() => {});
   await Promise.allSettled([...contexts.keys()].map(closeAccount));
   if (embeddedBrowserClient) await embeddedBrowserClient.dispose();
   return { ok: true };
@@ -1181,7 +1185,7 @@ function failTask(msg) {
 module.exports = {
   configure, createPlan, outreachTask, openLeadProfile, shutdown,
   taskState, launchAccount, closeAccount, openForLogin, checkLogin, scanAccountLogins, isLoggedIn,
-  collectTask, followTask, dmTask, aiTask, inboxTask, aiJudgeOne, aiJudgeBatch, stopTask,
+  collectTask, followTask, dmTask, aiTask, inboxTask, chat, aiJudgeOne, aiJudgeBatch, stopTask,
   searchTask: searchTasks.searchTask,
   dmDistributionTask: dmDistribution.dmDistributionTask,
   dmDistributionPreview: dmDistribution.dmDistributionPreview,

@@ -9,6 +9,9 @@
  *       2 消息（可多条）：3 服务端消息 ID、6 类型、7 发送者数字 UID、8 内容 JSON、10 发送时间（毫秒）、14 发送者 sec_uid
  *     payload 2 = has_more，3 = 下一页游标
  *   /aweme/v1/web/im/user/info/（JSON）：data[] 的 uid / sec_uid / nickname / follow_status / follower_status
+ *   实时推送（wss://frontier-im.douyin.com，2026-10-22 两个自有账号互发实测）：根 8 → 1 = 500（新消息）、6 → 500 → 5 = 一条消息（结构同上）。
+ *     已有会话里的新文字消息直接推全文（类型 7）；陌生人首条只推“会话更新”指令（类型 50001），需刷新初始同步才拿到正文。
+ *   get_by_conversation（cmd 301，打开会话时加载历史）：根 6 → 301 → 字段 1（每条消息，结构同上）
  */
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -48,17 +51,63 @@ const text = item => item && item.bytes ? item.bytes.toString('utf8') : '';
 const number = item => item && item.value !== undefined ? item.value.toString() : '';
 const nested = (list, field, budget) => { const item = one(list, field); return item && item.bytes ? readFields(item.bytes, budget) : []; };
 
-// 消息类型：7 文本；1 系统提示（如“对方回复或关注你之前，只能发送一条文字消息”）；其余为图片、表情、分享等
+// 消息类型：7 文本；1 系统提示；50001 会话指令（不展示、不计未读）（如“对方回复或关注你之前，只能发送一条文字消息”）；其余为图片、表情、分享等
 function describeContent(type, raw) {
   let content = null;
   try { content = JSON.parse(raw); } catch (_) { content = null; }
   const value = content && typeof content === 'object' ? content : {};
+  if (type === '50001' || value.command_type !== undefined) return { kind: 'command', text: '' };
   if (type === '1' || value.tips) return { kind: 'system', text: String(value.tips || '').replace(/\{\{\d+\}\}/g, '').slice(0, 500) };
   const body = typeof value.text === 'string' ? value.text.trim() : '';
   if (body) return { kind: 'text', text: body.slice(0, 2000) };
   if (value.url || value.resource_url || /image|pic/i.test(String(value.aweType || ''))) return { kind: 'image', text: '[图片]' };
   if (value.display_name || value.item_id || value.aweme_id || value.related_share_video) return { kind: 'share', text: '[分享]' };
   return { kind: 'other', text: '[非文字消息]' };
+}
+
+/** 一条消息（初始同步、实时推送、历史记录共用的结构） */
+function messageFrom(bytes, budget = { fields: 200000 }) {
+  const f = readFields(bytes, budget);
+  const type = number(one(f, 6));
+  const { kind, text: body } = describeContent(type, text(one(f, 8)));
+  return { id: number(one(f, 3)), convId: text(one(f, 1)), type, kind, text: body, senderUid: number(one(f, 7)), senderSecUid: text(one(f, 14)), createdMs: Number(number(one(f, 10))) || 0 };
+}
+
+/** 会话 ID “0:1:A的UID:B的UID” → 两个参与者数字 UID */
+function convParticipants(convId) {
+  const m = /^0:1:(\d+):(\d+)$/.exec(String(convId || ''));
+  return m ? [m[1], m[2]] : [];
+}
+
+/** 解析一帧实时推送：返回 { cmd, message }；不是新消息推送或解析不了返回 null */
+function parsePushFrame(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (buf.length < 8 || buf.length > MAX_BYTES) return null;
+  try {
+    const budget = { fields: 50000 };
+    const root = readFields(buf, budget);
+    const body = nested(root, 8, budget);
+    const cmd = number(one(body, 1));
+    if (cmd !== '500') return null;
+    const inner = nested(nested(body, 6, budget), 500, budget);
+    const msg = one(inner, 5);
+    if (!msg || !msg.bytes) return null;
+    const message = messageFrom(msg.bytes, budget);
+    return message.id && message.convId ? { cmd, message } : null;
+  } catch (_) { return null; }
+}
+
+/** 解析 get_by_conversation（cmd 301）历史消息 */
+function parseConversationMessages(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input || []);
+  if (!buf.length || buf.length > MAX_BYTES) return null;
+  try {
+    const budget = { fields: 400000 };
+    const root = readFields(buf, budget);
+    if (number(one(root, 1)) !== '301') return null;
+    const payload = nested(nested(root, 6, budget), 301, budget);
+    return { selfUid: number(one(root, 13)), messages: all(payload, 1).map(m => messageFrom(m.bytes, budget)).filter(m => m.id && m.senderUid) };
+  } catch (_) { return null; }
 }
 
 /** 解析一份 get_message_by_init 响应；不认识的结构返回 null（不猜） */
@@ -81,12 +130,7 @@ function parseInitResponse(input) {
       if (!convId) continue;
       const participants = all(nested(info, 6, budget), 1).map(p => { const f = readFields(p.bytes, budget); return { uid: number(one(f, 1)), secUid: text(one(f, 5)) }; })
         .filter(p => p.uid);
-      const messages = all(parts, 2).map(m => {
-        const f = readFields(m.bytes, budget);
-        const type = number(one(f, 6));
-        const { kind, text: body } = describeContent(type, text(one(f, 8)));
-        return { id: number(one(f, 3)), type, kind, text: body, senderUid: number(one(f, 7)), senderSecUid: text(one(f, 14)), createdMs: Number(number(one(f, 10))) || 0 };
-      }).filter(m => m.id && m.senderUid);
+      const messages = all(parts, 2).map(m => messageFrom(m.bytes, budget)).filter(m => m.id && m.senderUid);
       conversations.push({ convId, shortId: number(one(info, 2)), participants, messages });
     }
     return { selfUid, inbox, inboxLabel: inbox === '10002' ? 'stranger' : inbox === '10001' ? 'normal' : inbox, hasMore: number(one(payload, 2)) === '1', cursor: number(one(payload, 3)), conversations };
@@ -105,4 +149,4 @@ function parseUserInfo(json) {
   return users;
 }
 
-module.exports = { parseInitResponse, parseUserInfo, describeContent, readFields };
+module.exports = { parseInitResponse, parseUserInfo, parsePushFrame, parseConversationMessages, convParticipants, messageFrom, describeContent, readFields };

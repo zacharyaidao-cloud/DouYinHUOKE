@@ -11,8 +11,9 @@
  *   - 之后出现的、没见过的对方非系统消息 → 未读 +1
  *   - 线索“已回复”：会话对方是我们私信成功过的线索，且对方的非系统消息晚于我们的私信时间（与基线无关，首次扫描也能认出）
  */
-const MAX_MESSAGES = 30;
+const MAX_MESSAGES = 200;
 const SKIP_KINDS = new Set(['system']);
+const LOCAL_MATCH_MS = 3 * 60 * 1000; // 本机发出的消息与服务器回推的同一条在 3 分钟内按正文合并
 
 const beijingMs = value => {
   const text = String(value || '').trim();
@@ -21,6 +22,96 @@ const beijingMs = value => {
   return Number.isFinite(ms) ? ms : 0;
 };
 const beijingText = ms => new Date(ms + 8 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
+
+// 服务器回推了本机刚发出的同一条消息：把本机的“发送中 / 已送达”占位换成服务器的消息 ID，不重复显示
+function absorbLocal(conv, message) {
+  if (message.from !== 'me' || message.kind !== 'text') return false;
+  const local = conv.messages.find(m => m.local && m.status !== 'failed' && m.text === message.text && Math.abs((m.at || 0) - message.at) <= LOCAL_MATCH_MS);
+  if (!local) return false;
+  Object.assign(local, { id: message.id, at: message.at, local: false, status: 'sent' });
+  return true;
+}
+
+function finishConversation(saved) {
+  saved.messages.sort((a, b) => a.at - b.at);
+  if (saved.messages.length > MAX_MESSAGES) saved.messages = saved.messages.slice(-MAX_MESSAGES);
+  const shown = saved.messages.filter(m => m.kind !== 'system' || m.text);
+  const peerMessages = saved.messages.filter(m => m.from === 'peer' && !SKIP_KINDS.has(m.kind));
+  saved.lastAt = shown.length ? shown[shown.length - 1].at : saved.lastAt || 0;
+  saved.lastPeerAt = peerMessages.length ? peerMessages[peerMessages.length - 1].at : saved.lastPeerAt || 0;
+}
+
+/**
+ * 并入单个会话的一批消息（实时推送、打开会话加载的历史）。countUnread=false 时（历史）不计未读。
+ * 返回对方新消息列表。会话不存在时按会话 ID 新建（对方 UID 由会话 ID 推出）。
+ */
+function mergeMessages(inbox, { accountId, selfUid, convId, messages, countUnread = true, now = Date.now(), peerSecUid = '' }) {
+  const store = inbox && inbox.accounts ? inbox : { accounts: {} };
+  const key = String(accountId);
+  const account = store.accounts[key] || (store.accounts[key] = { conversations: {}, baselineAt: now });
+  const self = String(selfUid || account.selfUid || '');
+  if (self) account.selfUid = self;
+  const ids = /^0:1:(\d+):(\d+)$/.exec(String(convId || ''));
+  const peerUid = ids ? (ids[1] === self ? ids[2] : ids[1]) : '';
+  if (!peerUid || !self) return { inbox: store, newPeerMessages: [], peerUid: '' };
+  const saved = account.conversations[peerUid] || (account.conversations[peerUid] = { convId, peerUid, peerSecUid: '', nickname: '', firstSeenAt: now, unread: 0, messages: [] });
+  saved.convId = saved.convId || convId;
+  const seen = new Set(saved.messages.map(m => m.id));
+  const fresh = [];
+  for (const m of messages || []) {
+    if (!m.id || seen.has(String(m.id)) || m.kind === 'command') continue;
+    seen.add(String(m.id));
+    const message = { id: String(m.id), from: String(m.senderUid) === self ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0 };
+    if (message.from === 'peer' && !saved.peerSecUid && m.senderSecUid) saved.peerSecUid = m.senderSecUid;
+    if (absorbLocal(saved, message)) continue;
+    saved.messages.push(message);
+    if (message.from === 'peer' && !SKIP_KINDS.has(message.kind)) {
+      fresh.push({ accountId: key, peerUid, ...message });
+      if (countUnread) saved.unread = (Number(saved.unread) || 0) + 1;
+    }
+  }
+  if (peerSecUid && !saved.peerSecUid) saved.peerSecUid = peerSecUid;
+  finishConversation(saved);
+  return { inbox: store, newPeerMessages: fresh, peerUid };
+}
+
+/** 本机发出的消息：先记“发送中”，回执后更新为已送达 / 失败（带原因） */
+function addLocalMessage(inbox, { accountId, peerUid, text, now = Date.now() }) {
+  const conv = inbox && inbox.accounts && inbox.accounts[String(accountId)] && inbox.accounts[String(accountId)].conversations[String(peerUid)];
+  if (!conv) return null;
+  const message = { id: 'local-' + now + '-' + Math.random().toString(36).slice(2, 8), from: 'me', kind: 'text', text, at: now, local: true, status: 'sending' };
+  conv.messages.push(message);
+  finishConversation(conv);
+  return message.id;
+}
+function updateLocalMessage(inbox, { accountId, peerUid, localId, status, reason = '' }) {
+  const conv = inbox && inbox.accounts && inbox.accounts[String(accountId)] && inbox.accounts[String(accountId)].conversations[String(peerUid)];
+  const message = conv && conv.messages.find(m => m.id === localId);
+  if (!message) return false;
+  Object.assign(message, { status, ...(reason ? { reason } : {}) });
+  return true;
+}
+
+/** 聊天界面的会话列表：按最近活动排序，带最后一条消息预览（不含全部消息） */
+function listChats(inbox, { accounts = [], leadsBySecUid = new Map(), accountId = '', onlyPeer = false } = {}) {
+  const names = new Map(accounts.map(a => [String(a.id), a.name || String(a.id)]));
+  const rows = [];
+  for (const [id, account] of Object.entries((inbox && inbox.accounts) || {})) {
+    if (accountId && id !== String(accountId)) continue;
+    for (const conv of Object.values(account.conversations || {})) {
+      const shown = (conv.messages || []).filter(m => m.kind !== 'system' || m.text);
+      const last = shown[shown.length - 1];
+      const hasPeer = (conv.messages || []).some(m => m.from === 'peer' && !SKIP_KINDS.has(m.kind));
+      if (!last || (onlyPeer && !hasPeer)) continue;
+      const lead = leadsBySecUid.get(conv.peerSecUid) || null;
+      rows.push({ accountId: id, accountName: names.get(id) || id, peerUid: conv.peerUid, peerSecUid: conv.peerSecUid || '', nickname: conv.nickname || (lead && lead.nickname) || '',
+        inbox: conv.inbox || '', unread: Number(conv.unread) || 0, lastAt: conv.lastAt || 0, hasPeer,
+        last: { from: last.from, kind: last.kind, text: String(last.text || '').slice(0, 60), status: last.status || '' },
+        lead: lead ? { id: lead.id, nickname: lead.nickname, replied: !!lead.replied } : null });
+    }
+  }
+  return rows.sort((a, b) => b.lastAt - a.lastAt);
+}
 
 function mergeScan(inbox, { accountId, scan, now = Date.now() }) {
   const store = inbox && typeof inbox === 'object' && inbox.accounts ? inbox : { accounts: {} };
@@ -38,23 +129,20 @@ function mergeScan(inbox, { accountId, scan, now = Date.now() }) {
     const saved = account.conversations[peerUid] || { firstSeenAt: now, unread: 0, messages: [] };
     const seen = new Set(saved.messages.map(m => m.id));
     for (const m of conv.messages || []) {
-      if (!m.id || seen.has(m.id)) continue;
+      if (!m.id || seen.has(m.id) || m.kind === 'command') continue;
       seen.add(m.id);
       const message = { id: String(m.id), from: String(m.senderUid) === selfUid ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0 };
+      if (absorbLocal(saved, message)) continue;
       saved.messages.push(message);
       if (message.from === 'peer' && !SKIP_KINDS.has(message.kind) && !firstScan) {
         saved.unread = (Number(saved.unread) || 0) + 1;
         newPeerMessages.push({ accountId: key, peerUid, peerSecUid: peer.secUid || user.secUid || '', nickname: user.nickname || saved.nickname || '', ...message });
       }
     }
-    saved.messages.sort((a, b) => a.at - b.at);
-    if (saved.messages.length > MAX_MESSAGES) saved.messages = saved.messages.slice(-MAX_MESSAGES);
-    const peerMessages = saved.messages.filter(m => m.from === 'peer' && !SKIP_KINDS.has(m.kind));
+    finishConversation(saved);
     Object.assign(saved, {
       convId: conv.convId, inbox: conv.inbox || saved.inbox || '', peerUid, peerSecUid: peer.secUid || user.secUid || saved.peerSecUid || '',
       nickname: user.nickname || saved.nickname || '', followStatus: user.followStatus ?? saved.followStatus ?? null, followerStatus: user.followerStatus ?? saved.followerStatus ?? null,
-      lastAt: saved.messages.length ? saved.messages[saved.messages.length - 1].at : saved.lastAt || 0,
-      lastPeerAt: peerMessages.length ? peerMessages[peerMessages.length - 1].at : saved.lastPeerAt || 0
     });
     account.conversations[peerUid] = saved;
   }
@@ -124,4 +212,4 @@ function markRead(inbox, accountId, peerUid) {
   return true;
 }
 
-module.exports = { mergeScan, linkLeadReplies, listConversations, markRead, beijingMs, beijingText, MAX_MESSAGES };
+module.exports = { mergeScan, mergeMessages, addLocalMessage, updateLocalMessage, listChats, linkLeadReplies, listConversations, markRead, beijingMs, beijingText, MAX_MESSAGES };

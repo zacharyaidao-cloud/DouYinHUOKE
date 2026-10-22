@@ -13,13 +13,14 @@
 const { parseInitResponse, parseUserInfo, parsePushFrame, parseConversationMessages } = require('./lib/im-inbox');
 const { mergeScan, mergeMessages, addLocalMessage, updateLocalMessage, linkLeadReplies, markRead } = require('./lib/inbox-store');
 const { createDmReceiptObserver } = require('./lib/action-receipts');
+const outreachBrowser = require('./lib/outreach-browser');
 
 const CHAT_URL = 'https://www.douyin.com/chat?isPopup=1';
 const RECONNECT_MS = 30000, MAX_RECONNECTS = 5, REFRESH_DEBOUNCE_MS = 3000;
 
 function createChatRuntime({ store, authorize, getAlive, launchAccount, closeAccount, refreshLeadStatus = () => {},
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = Date.now, typeDelay = () => 40 + Math.round(Math.random() * 60),
-  createReceipt = createDmReceiptObserver, reconnectMs = RECONNECT_MS, refreshDebounceMs = REFRESH_DEBOUNCE_MS, initTimeoutMs = 25000, rowWaitMs = 8000 }) {
+  createReceipt = createDmReceiptObserver, openDm = (page, lead, options) => outreachBrowser.openDirectMessage(page, lead, options), isAccountBusy = () => false, accountMode = () => 'external', reconnectMs = RECONNECT_MS, refreshDebounceMs = REFRESH_DEBOUNCE_MS, initTimeoutMs = 25000, rowWaitMs = 8000 }) {
   const runtimes = new Map();
   let version = 0;
   const bump = () => { version++; };
@@ -141,6 +142,10 @@ function createChatRuntime({ store, authorize, getAlive, launchAccount, closeAcc
 
   async function connect(accountId) {
     const r = rt(accountId);
+    if (accountMode(r.accountId) === 'embedded') {
+      setState(r, 'error', '内嵌浏览器模式的账号暂不支持私信实时同步，请在账号管理改为外部浏览器');
+      return { ok: false, error: r.reason };
+    }
     r.wanted = true;
     if (r.page && !r.page.isClosed()) return { ok: true, state: r.state };
     return enqueue(r, async () => {
@@ -165,9 +170,18 @@ function createChatRuntime({ store, authorize, getAlive, launchAccount, closeAcc
           const health = await page.evaluate(() => ({ text: (document.body && document.body.innerText || '').slice(0, 3000) })).catch(() => ({ text: '' }));
           const reason = /验证码|安全验证|滑动/.test(health.text) ? '私信页需要安全验证，请在账号窗口完成' : /扫码登录|登录后/.test(health.text) ? '账号未登录' : '私信页没有返回会话数据';
           setState(r, 'error', reason);
+          // 没数据 / 超时这类偶发失败自动重试一次；未登录、需要验证要人工处理，不重试
+          if (!/验证|未登录/.test(reason) && !r.retried) {
+            r.retried = true;
+            const page0 = r.page; r.page = null; if (r.detach) r.detach();
+            if (page0 && !r.owned) await page0.close().catch(() => {});
+            if (r.owned) await closeAccount(r.accountId).catch(() => {});
+            r.reconnectTimer = setTimeout(() => { if (r.wanted && !r.page) connect(r.accountId).catch(() => {}); }, reconnectMs);
+            if (r.reconnectTimer.unref) r.reconnectTimer.unref();
+          }
           return { ok: false, error: reason };
         }
-        r.reconnects = 0;
+        r.reconnects = 0; r.retried = false;
         setState(r, 'online');
         log(r.accountId, '已连接，实时同步中');
         return { ok: true, state: 'online' };
@@ -282,6 +296,35 @@ function createChatRuntime({ store, authorize, getAlive, launchAccount, closeAcc
     });
   }
 
+  /**
+   * 在该账号自己的浏览器窗口里打开对方：target = 'profile' 打开主页；'chat' 打开主页并点开私信（不输入、不发送）。
+   * 该账号正在执行任务时拒绝，避免打断任务页面。
+   */
+  async function openInBrowser(accountId, peerUid, target = 'profile') {
+    const key = String(accountId);
+    const conv = (store.getInbox().accounts[key] || { conversations: {} }).conversations[String(peerUid)];
+    if (!conv || !conv.peerSecUid) return { ok: false, error: '还没有对方的主页信息，请等私信同步后再试' };
+    if (isAccountBusy(key)) return { ok: false, error: '该账号正在执行任务，结束后再打开' };
+    try {
+      await authorize({ accountId: key, kind: 'browser' });
+      const alive = await launchAccount(key, { headless: false, checkStopped: () => {} });
+      const page = alive.page;
+      // 打开可见窗口会关掉后台同步页（同一账号同一时间只能用一个浏览器资料）：立即在这个窗口里重新连上，不等 30 秒
+      const r0 = rt(key);
+      if (r0.wanted) { clearTimeout(r0.reconnectTimer); const t = setTimeout(() => { if (r0.wanted && !r0.page) connect(key).catch(() => {}); }, 1500); if (t.unref) t.unref(); }
+      await page.goto('https://www.douyin.com/user/' + encodeURIComponent(conv.peerSecUid), { waitUntil: 'domcontentloaded', timeout: 45000 });
+      if (typeof page.bringToFront === 'function') await page.bringToFront().catch(() => {});
+      log(key, `在账号浏览器打开对方${target === 'chat' ? '私信' : '主页'}`);
+      if (target !== 'chat') return { ok: true };
+      await sleep(2500);
+      const lead = conv.peerSecUid ? store.getLeads().find(l => l.uid === conv.peerSecUid) : null;
+      const opened = await openDm(page, { uid: conv.peerSecUid, UID: conv.peerUid, nickname: conv.nickname || (lead && lead.nickname) || '' }, { checkStopped() {}, async beforeUiAction() {} }).catch(() => false);
+      return opened ? { ok: true } : { ok: true, warning: '已打开对方主页，私信入口没有自动打开，请在窗口里点“私信”' };
+    } catch (error) {
+      return { ok: false, error: error.message || '打开失败' };
+    }
+  }
+
   function status() {
     const out = {};
     for (const [id, r] of runtimes) out[id] = { state: r.state, reason: r.reason || '', since: r.since || 0, lastEventAt: r.lastEventAt || 0, live: !!r.wsOpen, wanted: r.wanted };
@@ -290,7 +333,7 @@ function createChatRuntime({ store, authorize, getAlive, launchAccount, closeAcc
 
   async function shutdown() { for (const id of [...runtimes.keys()]) await disconnect(id).catch(() => {}); }
 
-  return { connect, disconnect, openConversation, send, status, shutdown, _runtimes: runtimes };
+  return { connect, disconnect, openConversation, send, openInBrowser, status, shutdown, _runtimes: runtimes };
 }
 
 module.exports = { createChatRuntime, CHAT_URL };

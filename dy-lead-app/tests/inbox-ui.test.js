@@ -15,11 +15,11 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
   const context = { ...require('../lib/ai-policy'), ...require('../lib/keyword-screen') };
   context.DEFAULT_INDUSTRY_PROMPT = vm.runInNewContext('(' + source.match(/const DEFAULT_INDUSTRY_PROMPT = ([\s\S]*?);\r?\nconst DEFAULT_SETTINGS/)[1] + ')', context);
   const settings = JSON.parse(JSON.stringify(vm.runInNewContext('(' + source.match(/const DEFAULT_SETTINGS = ([\s\S]*?);\r?\n\r?\nfunction getAccounts/)[1] + ')', context)));
-  const accounts = [{ id: 'A', name: '测试号', loginStatus: 'authenticated', daily: {} }, { id: 'B', name: '崔广安', loginStatus: 'authenticated', daily: {} }];
+  const accounts = [{ id: 'A', name: '测试号', loginStatus: 'authenticated', daily: {} }, { id: 'B', name: '崔广安', note: '客服A', loginStatus: 'authenticated', daily: {} }, { id: 'C', name: '账号3', loginStatus: 'authenticated', daily: {} }];
   const snapshot = { ok: true, accounts, settings, stats: {}, task: { running: false }, videos: {}, license: {}, loginUser: 'qa' };
   const now = Date.now();
   let version = 1;
-  const runtimes = { A: { state: 'offline' }, B: { state: 'online', live: true } };
+  const runtimes = { A: { state: 'offline' }, B: { state: 'online', live: true }, C: { state: 'error', reason: '账号未登录' } };
   const conversations = [
     { accountId: 'B', accountName: '崔广安', peerUid: '111', peerSecUid: 'SEC-111', nickname: '奇闻怪事', inbox: 'stranger', unread: 2, lastAt: now - 60000, hasPeer: true,
       last: { from: 'peer', kind: 'text', text: '<img src=x onerror="window.injected=1">怎么收费' }, lead: { id: 88, nickname: '奇闻怪事', replied: true } },
@@ -29,10 +29,12 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
   const messages = {
     'B|111': [{ id: '1', from: 'me', kind: 'text', text: '你好，我们是专门处理亚马逊账户问题的', at: now - 7200000 },
       { id: '2', from: 'me', kind: 'system', text: '对方回复或关注你之前，只能发送一条文字消息', at: now - 7199000 },
-      { id: '3', from: 'peer', kind: 'text', text: '<b>怎么收费</b>', at: now - 60000 }],
+      { id: '3', from: 'peer', kind: 'text', text: '<b>怎么收费</b>', at: now - 60000 },
+      { id: '4', from: 'peer', kind: 'text', text: '好的[捂脸]', at: now - 50000 },
+      { id: '5', from: 'peer', kind: 'sticker', text: '[表情]', media: { url: 'https://p3-sign.douyinpic.com/sticker.webp' }, at: now - 40000 }],
     'A|222': [{ id: '9', from: 'me', kind: 'text', text: '你好', at: now - 3600000 }]
   };
-  const sent = [], opened = [];
+  const sent = [], opened = [], posted = [];
   const browser = await playwright.chromium.launch({ headless: true, executablePath: browserPath });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -54,6 +56,8 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
       response = { ok: true, conversation: { ...conv, lead: conv.lead && { ...conv.lead, demand: '账号被停用了' } }, messages: messages[key] || [] };
     }
     if (pathname === '/api/chat/open') opened.push(req.postDataJSON());
+    if (['/api/chat/connect', '/api/chat/browser', '/api/settings'].includes(pathname) || pathname.startsWith('/api/accounts/')) posted.push([req.method(), pathname, req.postDataJSON()]);
+    if (pathname === '/api/chat/browser') response = { ok: true };
     if (pathname === '/api/chat/send') {
       const body = req.postDataJSON(); sent.push(body);
       messages[body.accountId + '|' + body.peerUid].push({ id: 'local-1', from: 'me', kind: 'text', text: body.text, at: Date.now(), status: 'sent' });
@@ -70,9 +74,23 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
   await page.waitForFunction(() => document.querySelectorAll('#chat-list .chat-item').length === 2);
 
   // 顶部与账号标签
-  assert.match(await page.locator('#chat-sync').innerText(), /实时同步中 1\/2 个账号/);
+  assert.match(await page.locator('#chat-sync').innerText(), /实时同步中 1\/3 个账号/);
+  // 连接状态条：每个账号状态、失败原因与操作；主按钮只连未连接的
+  assert.equal(await page.locator('#chat-conn .chat-chip').count(), 3);
+  const chipC = await page.locator('#chat-conn .chat-chip.error').innerText();
+  for (const text of ['账号3', '连接失败', '账号未登录', '去处理', '重试']) assert.ok(chipC.includes(text), text);
+  assert.match(await page.locator('#chat-conn .chat-chip.online').innerText(), /崔广安（客服A）.*在线.*断开/s);
+  assert.equal(await page.locator('#btn-chat-connect-all').innerText(), '连接未连接的 2 个账号');
+  await page.locator('#chat-conn [data-chat-conn="A"][data-act="connect"]').click();
+  await page.waitForFunction(() => true);
+  await page.waitForTimeout(200);
+  assert.deepEqual(posted.find(x => x[1] === '/api/chat/connect'), ['POST', '/api/chat/connect', { accountIds: ['A'] }]);
+  assert.equal(await page.locator('#chat-auto-connect').isChecked(), true);
+  await page.locator('#chat-auto-connect').uncheck();
+  await page.waitForTimeout(200);
+  assert.deepEqual(posted.find(x => x[1] === '/api/settings'), ['PUT', '/api/settings', { chat: { autoConnect: false } }]);
   const tabs = await page.locator('#chat-tabs').innerText();
-  for (const text of ['全部', '测试号', '崔广安']) assert.ok(tabs.includes(text), text);
+  for (const text of ['全部', '测试号', '崔广安（客服A）']) assert.ok(tabs.includes(text), text);
   assert.equal(await page.locator('[data-chat-tab="B"] .chat-dot.online').count(), 1);
   assert.equal(await page.locator('[data-chat-tab="A"] .chat-dot.offline').count(), 1);
   assert.equal(await page.locator('[data-chat-tab="B"] .chat-count').innerText(), '1');
@@ -93,11 +111,17 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
 
   // 打开会话：气泡、系统提示、头部信息；在线账号会请求后台打开会话
   await page.locator('#chat-list .chat-item').first().click();
-  await page.waitForFunction(() => document.querySelectorAll('#chat-messages .chat-row').length === 2);
+  await page.waitForFunction(() => document.querySelectorAll('#chat-messages .chat-row').length === 4);
+  assert.equal(await page.locator('#chat-messages img.chat-media.sticker').getAttribute('src'), 'https://p3-sign.douyinpic.com/sticker.webp');
+  assert.equal(await page.locator('#chat-messages img.chat-media').getAttribute('referrerpolicy'), 'no-referrer');
+  assert.match(await page.locator('#chat-messages .chat-row.peer').nth(1).innerText(), /好的🤦/);
   assert.equal(await page.locator('#chat-messages .chat-row.me').count(), 1);
-  assert.equal(await page.locator('#chat-messages .chat-row.peer .chat-bubble').innerText(), '<b>怎么收费</b>');
+  assert.equal(await page.locator('#chat-messages .chat-row.peer .chat-bubble').first().innerText(), '<b>怎么收费</b>');
   assert.match(await page.locator('#chat-messages .chat-system').innerText(), /只能发送一条/);
-  assert.match(await page.locator('#chat-head-sub').innerText(), /崔广安 · 陌生人消息 · 主页 · 线索 #88（已回复）/);
+  assert.match(await page.locator('#chat-head-sub').innerText(), /崔广安（客服A） · 陌生人消息 · 线索 #88（已回复）/);
+  await page.locator('#btn-chat-profile').click();
+  await page.waitForFunction(() => document.getElementById('chat-compose-hint').textContent.includes('已在该账号的浏览器窗口打开'));
+  assert.deepEqual(posted.find(x => x[1] === '/api/chat/browser'), ['POST', '/api/chat/browser', { accountId: 'B', peerUid: '111', target: 'profile' }]);
   assert.deepEqual(opened[0], { accountId: 'B', peerUid: '111' });
   if (process.env.DY_QA_SHOT) await page.locator('.chat-shell').screenshot({ path: process.env.DY_QA_SHOT });
 
@@ -117,5 +141,13 @@ test('私信聊天界面：账号标签显示在线与未读，会话列表可�
   assert.equal(await page.locator('#btn-chat-send').isDisabled(), true);
   assert.match(await page.locator('#chat-compose-hint').innerText(), /账号未连接/);
   assert.equal(opened.length, 1, '离线账号不请求后台打开会话');
+
+  // 账号管理：备注行内编辑，Enter 保存
+  await page.locator('#nav [data-page="accounts"]').click();
+  await page.locator('[data-account-action="note"][data-account-id="A"]').click();
+  await page.locator('[data-account-note-input="A"]').fill('主号');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  assert.deepEqual(posted.find(x => x[1] === '/api/accounts/A'), ['PUT', '/api/accounts/A', { note: '主号' }]);
   assert.deepEqual(errors, []);
 });

@@ -144,6 +144,8 @@ const DEFAULT_SETTINGS = {
   },
   // 软件登录：无操作多少分钟后需要重新登录（0 = 一直保持登录，软件开着就不退出；授权到期照常失效）
   session: { idleLogoutMinutes: 10 },
+  // 私信：软件登录后自动连接已登录账号的私信实时同步
+  chat: { autoConnect: true },
   outreach: { businessId: 'default' },
   ai: {
     enabled: true,
@@ -223,6 +225,7 @@ function normalizeSettings(s = {}) {
   delete merged.dm.intervalMinSec; delete merged.dm.intervalMaxSec;
   merged.human = { timeZone: merged.human.timeZone, maxConsecutiveErrors: merged.human.maxConsecutiveErrors };
   const idle = Number(merged.session && merged.session.idleLogoutMinutes);
+  merged.chat = { autoConnect: !(merged.chat && merged.chat.autoConnect === false) };
   merged.session = { idleLogoutMinutes: IDLE_LOGOUT_CHOICES.includes(idle) ? idle : DEFAULT_SETTINGS.session.idleLogoutMinutes };
   delete merged.ai.intervalSec; delete merged.ai.intervalJitter;
   const oldAI = s.ai || {};

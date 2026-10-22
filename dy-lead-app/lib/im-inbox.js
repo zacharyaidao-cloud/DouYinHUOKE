@@ -52,6 +52,27 @@ const number = item => item && item.value !== undefined ? item.value.toString() 
 const nested = (list, field, budget) => { const item = one(list, field); return item && item.bytes ? readFields(item.bytes, budget) : []; };
 
 // 消息类型：7 文本；1 系统提示；50001 会话指令（不展示、不计未读）（如“对方回复或关注你之前，只能发送一条文字消息”）；其余为图片、表情、分享等
+// 图片地址只认抖音自己的图片 CDN（签名地址，可直接显示）；其他地址一律丢弃
+const MEDIA_HOST = /(^|\.)(douyinpic\.com|byteimg\.com|douyinstatic\.com|douyincdn\.com)$/;
+function safeMediaUrl(value) {
+  try { const u = new URL(String(value)); return u.protocol === 'https:' && MEDIA_HOST.test(u.hostname) ? u.toString() : ''; } catch (_) { return ''; }
+}
+// 从内容里找第一张可显示的图：贴纸 url、打招呼贴纸 static_url / animate_url、图片 resource_url、分享封面 cover_url
+function findMedia(value, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 3) return null;
+  for (const key of ['url', 'static_url', 'animate_url', 'resource_url', 'image_url', 'cover_url', 'cover']) {
+    const item = value[key];
+    if (item && Array.isArray(item.url_list)) {
+      const url = item.url_list.map(safeMediaUrl).find(Boolean);
+      if (url) return { url, width: Number(value.width || item.width) || 0, height: Number(value.height || item.height) || 0 };
+    }
+  }
+  for (const key of ['joker_stickers', 'stickers', 'image_list', 'images']) {
+    if (Array.isArray(value[key]) && value[key].length) { const found = findMedia(value[key][0], depth + 1); if (found) return found; }
+  }
+  return null;
+}
+
 function describeContent(type, raw) {
   let content = null;
   try { content = JSON.parse(raw); } catch (_) { content = null; }
@@ -60,6 +81,10 @@ function describeContent(type, raw) {
   if (type === '1' || value.tips) return { kind: 'system', text: String(value.tips || '').replace(/\{\{\d+\}\}/g, '').slice(0, 500) };
   const body = typeof value.text === 'string' ? value.text.trim() : '';
   if (body) return { kind: 'text', text: body.slice(0, 2000) };
+  const media = findMedia(value);
+  const sticker = type === '5' || type === '15' || value.sticker_type !== undefined || value.emoji_type !== undefined || Array.isArray(value.joker_stickers);
+  if (media) return { kind: sticker ? 'sticker' : value.item_id || value.aweme_id || value.content_title ? 'share' : 'image', text: sticker ? '[表情]' : value.content_title ? '[分享] ' + String(value.content_title).slice(0, 60) : '[图片]', media };
+  if (value.skey || value.oid || value.tkey) return { kind: 'image', text: '[图片]（加密图片，请点“消息”在浏览器里查看）' };
   if (value.url || value.resource_url || /image|pic/i.test(String(value.aweType || ''))) return { kind: 'image', text: '[图片]' };
   if (value.display_name || value.item_id || value.aweme_id || value.related_share_video) return { kind: 'share', text: '[分享]' };
   return { kind: 'other', text: '[非文字消息]' };
@@ -69,8 +94,8 @@ function describeContent(type, raw) {
 function messageFrom(bytes, budget = { fields: 200000 }) {
   const f = readFields(bytes, budget);
   const type = number(one(f, 6));
-  const { kind, text: body } = describeContent(type, text(one(f, 8)));
-  return { id: number(one(f, 3)), convId: text(one(f, 1)), type, kind, text: body, senderUid: number(one(f, 7)), senderSecUid: text(one(f, 14)), createdMs: Number(number(one(f, 10))) || 0 };
+  const { kind, text: body, media } = describeContent(type, text(one(f, 8)));
+  return { id: number(one(f, 3)), convId: text(one(f, 1)), type, kind, text: body, ...(media ? { media } : {}), senderUid: number(one(f, 7)), senderSecUid: text(one(f, 14)), createdMs: Number(number(one(f, 10))) || 0 };
 }
 
 /** 会话 ID “0:1:A的UID:B的UID” → 两个参与者数字 UID */
@@ -149,4 +174,4 @@ function parseUserInfo(json) {
   return users;
 }
 
-module.exports = { parseInitResponse, parseUserInfo, parsePushFrame, parseConversationMessages, convParticipants, messageFrom, describeContent, readFields };
+module.exports = { parseInitResponse, parseUserInfo, parsePushFrame, parseConversationMessages, convParticipants, messageFrom, describeContent, safeMediaUrl, readFields };

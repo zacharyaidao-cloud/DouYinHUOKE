@@ -317,7 +317,7 @@ function renderExtraCollectAccounts() {
   const primary = $('col-account').value;
   const others = (state.accounts || []).filter(a => String(a.id) !== String(primary));
   for (const id of [...collectExtraAccounts]) if (!others.some(a => String(a.id) === id)) collectExtraAccounts.delete(id);
-  box.innerHTML = others.length ? others.map(a => `<label><input type="checkbox" data-extra-collect="${esc(a.id)}" ${collectExtraAccounts.has(String(a.id)) ? 'checked' : ''}>${esc(a.name)}<span class="hint">（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</span></label>`).join('')
+  box.innerHTML = others.length ? others.map(a => `<label><input type="checkbox" data-extra-collect="${esc(a.id)}" ${collectExtraAccounts.has(String(a.id)) ? 'checked' : ''}>${esc(accountLabel(a))}<span class="hint">（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</span></label>`).join('')
     : '<span class="hint">只有一个账号；添加更多账号后可在这里勾选轮换采集</span>';
 }
 function collectAccountIds() {
@@ -331,16 +331,17 @@ $('col-extra-accounts').addEventListener('change', event => {
 });
 $('col-account').addEventListener('change', () => renderExtraCollectAccounts());
 
+function accountLabel(a) { return a ? (a.note ? `${a.name}（${a.note}）` : String(a.name || a.id)) : ''; }
 function fillAccounts(selectId) {
   const sel = $(selectId);
   const selected = sel.value;
   const accounts = state.accounts || [];
   if (selectId === 'log-account') {
-    sel.innerHTML = '<option value="system">系统 / AI 判断日志</option>' + accounts.map(a => `<option value="${esc(a.id)}">${esc(a.name)}（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</option>`).join('');
+    sel.innerHTML = '<option value="system">系统 / AI 判断日志</option>' + accounts.map(a => `<option value="${esc(a.id)}">${esc(accountLabel(a))}（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</option>`).join('');
     if (selected === 'system' || accounts.some(a => String(a.id) === selected)) sel.value = selected;
     return;
   }
-  sel.innerHTML = accounts.map(a => `<option value="${a.id}">${esc(a.name)}（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</option>`).join('');
+  sel.innerHTML = accounts.map(a => `<option value="${a.id}">${esc(accountLabel(a))}（${esc(loginPhaseLabels[loginFeedbackFor(a).phase])}）</option>`).join('');
   if (!accounts.length) sel.innerHTML = '<option value="">（请先添加账号）</option>';
   if (accounts.some(a => String(a.id) === selected)) sel.value = selected;
 }
@@ -558,6 +559,24 @@ function renderAccountNotice() {
   box.dataset.state = phase;
   box.innerHTML = `<strong>${name ? esc(name) + ' · ' : ''}${esc(loginPhaseLabels[phase] || '账号操作')}</strong>${notice.message ? `<div class="task-detail">${esc(notice.message)}</div>` : ''}`;
 }
+let accountNoteEditing = '';
+async function saveAccountNote(id) {
+  const input = document.querySelector(`[data-account-note-input="${CSS.escape(String(id))}"]`);
+  if (!input) return;
+  try { await api('/accounts/' + encodeURIComponent(id), { method: 'PUT', body: { note: input.value.trim() } }); accountNoteEditing = ''; await refresh(); }
+  catch (error) { input.title = error.message || '保存失败'; input.classList.add('invalid'); }
+}
+document.addEventListener('click', event => {
+  const action = event.target.closest('[data-account-action="note"]');
+  if (action) { accountNoteEditing = accountNoteEditing === action.dataset.accountId ? '' : action.dataset.accountId; renderAccounts(); const input = document.querySelector('[data-account-note-input]'); if (input) input.focus(); return; }
+  const save = event.target.closest('[data-account-note-save]');
+  if (save) saveAccountNote(save.dataset.accountNoteSave);
+}, true);
+document.addEventListener('keydown', event => {
+  if (!event.target.matches || !event.target.matches('[data-account-note-input]')) return;
+  if (event.key === 'Enter') { event.preventDefault(); saveAccountNote(event.target.dataset.accountNoteInput); }
+  if (event.key === 'Escape') { accountNoteEditing = ''; renderAccounts(); }
+});
 function renderAccounts() {
   if (!state) return;
   $('btn-add-acc').disabled = startupScanBusy();
@@ -571,7 +590,7 @@ function renderAccounts() {
     const locked = feedback.busy || startupScanBusy() || taskBusy;
     return `<tr data-account-row="${esc(a.id)}">
       <td>${a.id}</td>
-      <td>${esc(a.name)}${a.note ? `<br><span class="subtext">${esc(a.note)}</span>` : ''}</td>
+      <td>${esc(a.name)}${a.note ? `<br><span class="subtext">${esc(a.note)}</span>` : ''}${accountNoteEditing === String(a.id) ? `<div class="acc-note-edit"><input data-account-note-input="${esc(a.id)}" maxlength="40" value="${esc(a.note || '')}" placeholder="例如：客服A、主号"><button class="normal" data-account-note-save="${esc(a.id)}">保存</button></div>` : ''}</td>
       <td class="account-login-cell" data-login-state="${esc(feedback.phase)}"><strong>${esc(loginPhaseLabels[feedback.phase] || a.loginState)}</strong>${feedback.message ? `<span class="subtext">${esc(feedback.message)}</span>` : ''}${a.loginCheckedAt ? `<span class="subtext">最近检查：${esc(a.loginCheckedAt)}</span>` : ''}${a.loginAt ? `<span class="subtext">最近确认登录：${esc(a.loginAt)}</span>` : ''}</td>
       <td><select data-account-mode="${esc(a.id)}" aria-label="${esc(a.name)}的浏览器模式" ${locked || taskBusy ? 'disabled' : ''}><option value="external" ${a.browserMode !== 'embedded' ? 'selected' : ''}>外部专用浏览器</option><option value="embedded" ${a.browserMode === 'embedded' ? 'selected' : ''} ${!embeddedBrowser ? 'disabled' : ''}>内嵌浏览器</option></select></td>
       <td>${esc(a.proxy || '—')}</td>
@@ -579,6 +598,7 @@ function renderAccounts() {
       <td class="account-action-cell"><div class="account-actions">
         <button data-account-id="${esc(a.id)}" data-account-action="open" ${locked ? 'disabled' : ''}>打开登录</button>
         <button data-account-id="${esc(a.id)}" data-account-action="check" ${locked ? 'disabled' : ''}>检查</button>
+        <button data-account-id="${esc(a.id)}" data-account-action="note">备注</button>
         <button data-account-id="${esc(a.id)}" data-account-action="close" ${locked ? 'disabled' : ''}>关浏览器</button>
         <button class="danger" data-account-id="${esc(a.id)}" data-account-action="del" ${locked ? 'disabled' : ''}>删除</button>
       </div></td>
@@ -1655,7 +1675,36 @@ function chatDateLabel(ms) {
 const chatStateLabels = { online: '在线', connecting: '连接中', error: '连接失败', offline: '未连接' };
 function chatAccountState(id) { const r = chatUi.runtimes[String(id)]; return r ? r.state : 'offline'; }
 
+const CHAT_EMOJI = { 微笑: '🙂', 色: '😍', 发呆: '😳', 酷拽: '😎', 抠鼻: '🤭', 流泪: '😢', 捂脸: '🤦', 发怒: '😡', 呲牙: '😁', 睡: '😴', 害羞: '☺️', 可爱: '🥰', 晕: '😵', 衰: '😩',
+  闭嘴: '🤐', 机智: '🤓', 来看我: '👀', 灵光一闪: '💡', 耶: '✌️', 打脸: '🤕', 大笑: '😆', 哈欠: '🥱', 震惊: '😱', 送心: '💗', 困: '😪', 泣不成声: '😭', 小鼓掌: '👏', 大金牙: '😬', 偷笑: '🤭',
+  石化: '🗿', 思考: '🤔', 吐血: '🤮', 可怜: '🥺', 嘘: '🤫', 撇嘴: '😒', 黑线: '😓', 笑哭: '😂', 奸笑: '😏', 得意: '😏', 憨笑: '😄', 抓狂: '😫', 泪奔: '😭', 钱: '🤑', 吻: '😘', 恐惧: '😨', 笑: '😀',
+  快哭了: '🥲', 翻白眼: '🙄', 互粉: '🤝', 赞: '👍', 鼓掌: '👏', 祈祷: '🙏', 干杯: '🍻', 玫瑰: '🌹', 凋谢: '🥀', 爱心: '❤️', 心碎: '💔', OK: '👌', 握手: '🤝', 抱拳: '🙏', 加油: '💪', 比心: '🫶',
+  强壮: '💪', 胜利: '✌️', 666: '👍', 微笑2: '🙂', 擦汗: '😅', 再见: '👋', 生病: '🤒', 吐: '🤮', 惊讶: '😮', 委屈: '🥺', 尴尬: '😅', 疑问: '❓', 皱眉: '😟', 难过: '😞', 开心: '😄', 礼物: '🎁', 红包: '🧧', 太阳: '☀️', 月亮: '🌙' };
+function chatText(text) { return esc(text).replace(/\[([^\[\]<>]{1,6})\]/g, (m, k) => CHAT_EMOJI[k] ? `<span class="chat-emoji" title="[${k}]">${CHAT_EMOJI[k]}</span>` : m); }
+function chatMedia(m) {
+  const url = m.media && /^https:\/\//.test(m.media.url) ? m.media.url : '';
+  return url ? `<img class="chat-media ${m.kind === 'sticker' ? 'sticker' : ''}" src="${esc(url)}" referrerpolicy="no-referrer" loading="lazy" alt="${esc(m.text || '[图片]')}">` : '';
+}
+function chatConnLabel(id) { const r = chatUi.runtimes[String(id)]; return r && r.state === 'error' ? '连接失败' : chatStateLabels[r ? r.state : 'offline'] || '未连接'; }
+function renderChatConn() {
+  const accounts = state.accounts || [];
+  $('chat-conn').innerHTML = accounts.map(a => {
+    const r = chatUi.runtimes[String(a.id)] || { state: 'offline' }, st = r.state;
+    const manual = st === 'error' && /验证|未登录|内嵌/.test(r.reason || '');
+    const actions = st === 'online' ? `<button class="normal" data-chat-conn="${esc(a.id)}" data-act="disconnect">断开</button>`
+      : st === 'connecting' ? '<button class="normal" disabled>连接中…</button>'
+      : (manual ? `<button class="normal" data-chat-conn="${esc(a.id)}" data-act="fix" title="打开该账号的浏览器窗口，完成登录或验证后再点重试">去处理</button>` : '') + `<button class="primary" data-chat-conn="${esc(a.id)}" data-act="connect">${st === 'error' ? '重试' : '连接'}</button>`;
+    return `<span class="chat-chip ${st}"><span class="chat-dot ${st}"></span><b>${esc(accountLabel(a))}</b><span class="chat-chip-state">${esc(chatConnLabel(a.id))}</span>${st === 'error' && r.reason ? `<span class="chat-chip-reason" title="${esc(r.reason)}">${esc(r.reason)}</span>` : ''}${actions}</span>`;
+  }).join('');
+  const waiting = accounts.filter(a => !['online', 'connecting'].includes(chatAccountState(a.id))).length;
+  const button = $('btn-chat-connect-all');
+  button.textContent = !accounts.length ? '连接全部账号' : waiting ? (waiting === accounts.length ? '连接全部账号' : `连接未连接的 ${waiting} 个账号`) : '已全部连接';
+  button.disabled = !waiting;
+  const auto = $('chat-auto-connect');
+  if (state.settings && state.settings.chat && document.activeElement !== auto) auto.checked = state.settings.chat.autoConnect !== false;
+}
 function renderChatTop() {
+  renderChatConn();
   const accounts = state.accounts || [];
   const online = accounts.filter(a => chatAccountState(a.id) === 'online').length;
   const sync = $('chat-sync');
@@ -1667,7 +1716,7 @@ function renderChatTop() {
   const tab = (id, label, dot, count) => `<button class="chat-tab ${chatUi.account === id ? 'active' : ''}" data-chat-tab="${esc(id)}" role="tab">${dot}${esc(label)}${count ? `<span class="chat-count">${count}</span>` : ''}</button>`;
   $('chat-tabs').innerHTML = tab('all', '全部', '', totalUnread) + accounts.map(a => {
     const st = chatAccountState(a.id);
-    return tab(String(a.id), a.name, `<span class="chat-dot ${st}" title="${esc(chatStateLabels[st] || st)}"></span>`, unreadBy[String(a.id)] || 0);
+    return tab(String(a.id), accountLabel(a), `<span class="chat-dot ${st}" title="${esc(chatStateLabels[st] || st)}"></span>`, unreadBy[String(a.id)] || 0);
   }).join('');
 }
 
@@ -1684,7 +1733,7 @@ function renderChatList() {
       c.lead ? `<span class="chat-tag ${c.lead.replied ? 'replied' : 'lead'}">${c.lead.replied ? '已回复' : '线索'}</span>` : ''].join('');
     return `<div class="chat-item ${active ? 'active' : ''}" role="option" data-chat-open="${esc(c.accountId)}" data-peer="${esc(c.peerUid)}">${chatAvatar(name)}
       <div class="chat-item-main"><div class="chat-item-top"><span class="chat-item-name">${esc(name)}</span><span class="chat-item-time">${esc(chatTime(c.lastAt))}</span></div>
-      <div class="chat-item-bottom"><span class="chat-item-preview">${esc(preview)}</span>${c.unread ? `<span class="chat-count">${c.unread}</span>` : ''}</div>
+      <div class="chat-item-bottom"><span class="chat-item-preview">${chatText(preview)}</span>${c.unread ? `<span class="chat-count">${c.unread}</span>` : ''}</div>
       ${tags ? `<div class="chat-item-tags">${tags}</div>` : ''}</div></div>`;
   }).join('') || `<div class="chat-empty" style="padding:30px">${chatUi.conversations.length ? '没有符合条件的会话' : '还没有会话；点“连接全部账号”开始同步'}</div>`;
 }
@@ -1696,11 +1745,12 @@ function renderChatPane(messages) {
   if (!sel || !conv) return;
   const name = conv.nickname || ('UID ' + conv.peerUid);
   const account = (state.accounts || []).find(a => String(a.id) === sel.accountId);
+  $('btn-chat-profile').disabled = $('btn-chat-dm').disabled = !conv.peerSecUid;
   $('chat-head-avatar').outerHTML = `<div id="chat-head-avatar" class="chat-avatar" style="background:${chatColor(name)}">${esc(Array.from(name)[0] || '?')}</div>`;
   $('chat-head-name').textContent = name;
-  const home = conv.peerSecUid ? ` · <a href="https://www.douyin.com/user/${esc(encodeURIComponent(conv.peerSecUid))}" target="_blank" rel="noopener noreferrer">主页</a>` : '';
+  const home = '';
   const lead = conv.lead ? ` · 线索 #${esc(conv.lead.id)}${conv.lead.replied ? '（已回复）' : ''}${conv.lead.demand ? '：' + esc(conv.lead.demand.slice(0, 40)) : ''}` : '';
-  $('chat-head-sub').innerHTML = `${esc(account ? account.name : sel.accountId)}${conv.inbox === 'stranger' ? ' · 陌生人消息' : ''}${home}${lead}`;
+  $('chat-head-sub').innerHTML = `${esc(account ? accountLabel(account) : sel.accountId)}${conv.inbox === 'stranger' ? ' · 陌生人消息' : ''}${home}${lead}`;
   const st = chatAccountState(sel.accountId);
   $('chat-head-status').innerHTML = `<span class="chat-dot ${st}"></span> 账号${esc(chatStateLabels[st] || st)}`;
   $('chat-head-status').style.display = 'flex'; $('chat-head-status').style.alignItems = 'center'; $('chat-head-status').style.gap = '6px';
@@ -1715,7 +1765,7 @@ function renderChatPane(messages) {
     const me = m.from === 'me';
     const statusText = m.status === 'sending' ? '发送中…' : m.status === 'failed' ? '未送达：' + (m.reason || '失败') : m.status === 'pending' ? '待核验：' + (m.reason || '') : '';
     html += `<div class="chat-row ${me ? 'me' : 'peer'}">${me ? chatAvatar(account ? account.name : '我') : chatAvatar(name)}
-      <div class="chat-bubble-wrap"><div class="chat-bubble">${esc(m.text)}</div><div class="chat-meta ${m.status === 'failed' ? 'failed' : ''}">${esc(chatTime(m.at, true))}${statusText ? ' · ' + esc(statusText) : ''}</div></div></div>`;
+      <div class="chat-bubble-wrap"><div class="chat-bubble ${chatMedia(m) ? 'media' : ''}">${chatMedia(m) || chatText(m.text)}</div><div class="chat-meta ${m.status === 'failed' ? 'failed' : ''}">${esc(chatTime(m.at, true))}${statusText ? ' · ' + esc(statusText) : ''}</div></div></div>`;
   }
   box.innerHTML = html || '<div class="chat-empty">还没有消息</div>';
   if (atBottom || chatUi.scrollToEnd) { box.scrollTop = box.scrollHeight; chatUi.scrollToEnd = false; }
@@ -1790,6 +1840,33 @@ $('btn-chat-send').addEventListener('click', sendChatMessage);
 $('chat-input').addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendChatMessage(); }
 });
+$('chat-conn').addEventListener('click', async event => {
+  const button = event.target.closest('[data-chat-conn]');
+  if (!button) return;
+  const id = button.dataset.chatConn, act = button.dataset.act;
+  button.disabled = true;
+  try {
+    if (act === 'fix') await api('/accounts/' + encodeURIComponent(id) + '/open', { method: 'POST', body: {} });
+    else await api('/chat/' + (act === 'disconnect' ? 'disconnect' : 'connect'), { method: 'POST', body: { accountIds: [id] } });
+  } catch (error) { $('chat-sync').textContent = error.message || '操作失败'; }
+  loadChatState();
+});
+$('chat-auto-connect').addEventListener('change', async event => {
+  const autoConnect = event.target.checked;
+  try { await api('/settings', { method: 'PUT', body: { chat: { autoConnect } } }); state.settings.chat = { autoConnect }; }
+  catch (error) { event.target.checked = !autoConnect; $('chat-sync').textContent = '未保存：' + (error.message || ''); }
+});
+for (const [id, target] of [['btn-chat-profile', 'profile'], ['btn-chat-dm', 'chat']]) {
+  $(id).addEventListener('click', async () => {
+    const sel = chatUi.selected;
+    if (!sel) return;
+    $('chat-compose-hint').textContent = target === 'chat' ? '正在该账号的浏览器里打开私信…' : '正在该账号的浏览器里打开主页…';
+    try {
+      const r = await api('/chat/browser', { method: 'POST', body: { ...sel, target } });
+      $('chat-compose-hint').textContent = r.ok ? (r.warning || '已在该账号的浏览器窗口打开') : '未打开：' + (r.error || '失败');
+    } catch (error) { $('chat-compose-hint').textContent = '未打开：' + (error.message || ''); }
+  });
+}
 $('btn-chat-connect-all').addEventListener('click', async () => { await api('/chat/connect', { method: 'POST', body: {} }).catch(() => {}); loadChatState(); });
 $('btn-chat-disconnect-all').addEventListener('click', async () => { await api('/chat/disconnect', { method: 'POST', body: {} }).catch(() => {}); loadChatState(); });
 // 页面打开时每 2.5 秒取一次变化（只在有变化时重绘）

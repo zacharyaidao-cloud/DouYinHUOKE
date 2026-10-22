@@ -32,6 +32,12 @@ function absorbLocal(conv, message) {
   return true;
 }
 
+// 已存的消息再次出现：补上旧版本没保存的图片地址与类型（不改已有正文与发送状态）
+function refreshExisting(conv, m) {
+  const old = conv.messages.find(x => x.id === String(m.id));
+  if (old && m.media && !old.media) Object.assign(old, { media: m.media, kind: m.kind, text: old.text && !/^[(图片|非文字消息)]/.test(old.text) ? old.text : m.text });
+}
+
 function finishConversation(saved) {
   saved.messages.sort((a, b) => a.at - b.at);
   if (saved.messages.length > MAX_MESSAGES) saved.messages = saved.messages.slice(-MAX_MESSAGES);
@@ -59,9 +65,10 @@ function mergeMessages(inbox, { accountId, selfUid, convId, messages, countUnrea
   const seen = new Set(saved.messages.map(m => m.id));
   const fresh = [];
   for (const m of messages || []) {
-    if (!m.id || seen.has(String(m.id)) || m.kind === 'command') continue;
+    if (m.kind === 'command' || !m.id) continue;
+    if (seen.has(String(m.id))) { refreshExisting(saved, m); continue; }
     seen.add(String(m.id));
-    const message = { id: String(m.id), from: String(m.senderUid) === self ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0 };
+    const message = { id: String(m.id), from: String(m.senderUid) === self ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0, ...(m.media ? { media: m.media } : {}) };
     if (message.from === 'peer' && !saved.peerSecUid && m.senderSecUid) saved.peerSecUid = m.senderSecUid;
     if (absorbLocal(saved, message)) continue;
     saved.messages.push(message);
@@ -129,9 +136,10 @@ function mergeScan(inbox, { accountId, scan, now = Date.now() }) {
     const saved = account.conversations[peerUid] || { firstSeenAt: now, unread: 0, messages: [] };
     const seen = new Set(saved.messages.map(m => m.id));
     for (const m of conv.messages || []) {
-      if (!m.id || seen.has(m.id) || m.kind === 'command') continue;
+      if (m.kind === 'command' || !m.id) continue;
+      if (seen.has(String(m.id))) { refreshExisting(saved, m); continue; }
       seen.add(m.id);
-      const message = { id: String(m.id), from: String(m.senderUid) === selfUid ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0 };
+      const message = { id: String(m.id), from: String(m.senderUid) === selfUid ? 'me' : 'peer', kind: m.kind, text: m.text, at: Number(m.createdMs) || 0, ...(m.media ? { media: m.media } : {}) };
       if (absorbLocal(saved, message)) continue;
       saved.messages.push(message);
       if (message.from === 'peer' && !SKIP_KINDS.has(message.kind) && !firstScan) {

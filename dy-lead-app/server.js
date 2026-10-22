@@ -86,6 +86,17 @@ function taskError(error) {
   engine.taskState.running=false; engine.taskState.status='任务暂停：'+error.message;
   store.log('system',engine.taskState.status);
 }
+// 软件登录后自动连接私信：账号登录检查结束时（或这次检查被跳过时）连接所有已登录（外部浏览器）账号；不另开定时器
+function chatAutoConnect(session) {
+  try {
+    if(store.getSettings().chat?.autoConnect===false||!isSessionValid(session)||!engine.chat) return;
+    if(!taskContext) taskContext=session.authContext;
+    const ids=store.getAccounts().filter(a=>a.loginStatus==='authenticated'&&a.browserMode!=='embedded').map(a=>String(a.id));
+    if(!ids.length) return;
+    store.log('system',`登录后自动连接私信：${ids.length} 个账号`);
+    for(const id of ids) engine.chat.connect(id).catch(()=>{});
+  } catch(_) { /* 自动连接失败不影响登录，可在私信页手动连接 */ }
+}
 function startTask(session, fn) {
   if (browserControl.isHeld()) throw new Error('账号网页正在切换，请稍后启动任务');
   if (engineBusy() || taskPending) throw new Error('已有任务在运行，请停止并等待结束');
@@ -254,7 +265,9 @@ async function handleApi(req,res,pathname) {
     const token=crypto.randomBytes(24).toString('hex');
     const session={exp:Date.now()+sessionTtlMs(),username:r.username,role:'user',authContext:r.authContext};
     sessions.set(token,session);
-    startupLoginScan.request(session, options => engine.scanAccountLogins(options));
+    startupLoginScan.request(session, async options => { const result=await engine.scanAccountLogins(options); chatAutoConnect(session); return result; });
+    // 账号都在 10 分钟内确认过、本次跳过检查时，直接连接
+    if(startupLoginScan.readState().phase==='completed') chatAutoConnect(session);
     return json(res,{ok:true,token,role:'user',username:r.username,expiresAt:r.expiresAt,offline:!!r.offline,mac:r.mac});
   }
   const auth=getSession(req); if(!auth) return json(res,{ok:false,error:'未登录或授权已失效，请重新登录',auth:false},401);
@@ -286,7 +299,7 @@ async function handleApi(req,res,pathname) {
     const body=await readBody(req); if(body.license) return json(res,{ok:false,error:'授权配置由发行方固定，客户版不可修改'},403);
     if(body.ai&&Object.hasOwn(body.ai,'baseUrl')&&body.ai.baseUrl!=='https://api.deepseek.com') return json(res,{ok:false,error:'AI接口固定使用DeepSeek官方HTTPS地址'},400);
     // 只改“无操作自动退出登录”不影响任务，任务运行中也允许保存
-    const sessionOnly=Object.keys(body).length===1&&body.session&&typeof body.session==='object';
+    const sessionOnly=Object.keys(body).length>0&&Object.keys(body).every(k=>['session','chat'].includes(k)&&body[k]&&typeof body[k]==='object');
     if((engineBusy()||taskPending)&&!loginSessionOnly()&&!sessionOnly) return json(res,{ok:false,error:'请停止任务后修改规则与执行设置'},409);
     const current=store.getSettings();
     for(const k of Object.keys(body)) if(k!=='license'&&Object.hasOwn(current,k)&&body[k]&&typeof body[k]==='object'&&!Array.isArray(body[k])) current[k]={...current[k],...body[k]};
@@ -315,6 +328,13 @@ async function handleApi(req,res,pathname) {
     if((engineBusy()||taskPending||browserControl.isHeld())&&method!=='GET'&&!checkingCurrentLogin) return json(res,{ok:false,error:'请先停止当前任务或等待网页切换完成'},409);
     if(method==='PUT') {
       const b=await readBody(req);
+      // 只改名称 / 备注不影响任务与浏览器，任何时候都可保存（备注全局显示为“名称（备注）”）
+      if(Object.keys(b).length&&Object.keys(b).every(k=>['name','note'].includes(k))) {
+        const accounts=store.getAccounts(); const acc=accounts.find(a=>String(a.id)===id);
+        if(b.note!=null) acc.note=String(b.note).trim().slice(0,40);
+        if(b.name!=null&&String(b.name).trim()) acc.name=String(b.name).trim().slice(0,30);
+        store.setAccounts(accounts); return json(res,{ok:true});
+      }
       if(engineBusy()||taskPending||browserControl.isHeld()) return json(res,{ok:false,error:'请先停止当前任务或等待网页切换完成'},409);
       if(b.browserMode!==undefined&&!['external','embedded'].includes(b.browserMode)) return json(res,{ok:false,error:'浏览器模式无效'},400);
       const current=store.getAccounts().find(a=>String(a.id)===id);
@@ -414,7 +434,7 @@ async function handleApi(req,res,pathname) {
     const query=new URL(req.url,'http://127.0.0.1').searchParams;
     const leads=store.getLeads(), bySec=new Map(); for(const l of leads) if(l.uid&&!bySec.has(l.uid)) bySec.set(l.uid,l);
     const inbox=store.getInbox(), status=engine.chat.status();
-    const conversations=require('./lib/inbox-store').listChats(inbox,{accounts:store.getAccounts(),leadsBySecUid:bySec,onlyPeer:query.get('onlyPeer')==='1'});
+    const conversations=require('./lib/inbox-store').listChats(inbox,{accounts:store.getAccounts().map(a=>({id:a.id,name:a.note?`${a.name}（${a.note}）`:a.name})),leadsBySecUid:bySec,onlyPeer:query.get('onlyPeer')==='1'});
     return json(res,{ok:true,version:status.version,runtimes:status.runtimes,conversations});
   }
   if(pathname==='/api/chat/messages'&&method==='GET') {
@@ -428,14 +448,19 @@ async function handleApi(req,res,pathname) {
   }
   if(parts[1]==='chat'&&method==='POST') {
     const b=await readBody(req);
+    taskContext=session.authContext; // 私信连接 / 发送 / 打开按本次登录的授权校验（每次对外操作仍检查授权）
     if(parts[2]==='connect'||parts[2]==='disconnect') {
       const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:(store.getAccounts()||[]).map(a=>String(a.id));
       for(const id of ids) requireAccount(id);
-      for(const id of ids) engine.chat[parts[2]](id).catch(()=>{});
-      return json(res,{ok:true,accountIds:ids});
+      if(parts[2]==='disconnect') { for(const id of ids) engine.chat.disconnect(id).catch(()=>{}); return json(res,{ok:true,accountIds:ids}); }
+      const runtimes=engine.chat.status().runtimes;
+      const pending=ids.filter(id=>!['online','connecting'].includes(runtimes[id]?.state));
+      (async()=>{ for(let i=0;i<pending.length;i++) { if(i) await new Promise(r=>setTimeout(r,3000)); await engine.chat.connect(pending[i]).catch(()=>{}); } })();
+      return json(res,{ok:true,accountIds:pending,skipped:ids.length-pending.length});
     }
     if(parts[2]==='open') { requireAccount(b.accountId); return json(res,await engine.chat.openConversation(String(b.accountId),String(b.peerUid||''))); }
     if(parts[2]==='send') { requireAccount(b.accountId); return json(res,await engine.chat.send(String(b.accountId),String(b.peerUid||''),String(b.text||''))); }
+    if(parts[2]==='browser') { requireAccount(b.accountId); return json(res,await engine.chat.openInBrowser(String(b.accountId),String(b.peerUid||''),b.target==='chat'?'chat':'profile')); }
   }
   // 私信归集：检查（只读）、列表、标记已读
   if(method==='POST'&&pathname==='/api/inbox/scan') { const b=await readBody(req); const ids=Array.isArray(b.accountIds)&&b.accountIds.length?[...new Set(b.accountIds.map(String))]:(store.getAccounts()||[]).map(a=>String(a.id)); for(const id of ids) requireAccount(id); startTask(session,()=>engine.inboxTask(ids)); return json(res,{ok:true,started:true}); }
@@ -490,7 +515,7 @@ const server=http.createServer(async(req,res)=>{
     }
     const decoded=decodeURIComponent(pathname); const file=path.resolve(WEB_DIR,'.'+(decoded==='/'?'/index.html':decoded));
     if(!file.startsWith(WEB_DIR+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()) { res.writeHead(404); return res.end('Not Found'); }
-    res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"}); fs.createReadStream(file).pipe(res);
+    res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https://*.douyinpic.com https://*.byteimg.com https://*.douyinstatic.com https://*.douyincdn.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"}); fs.createReadStream(file).pipe(res);
   } catch(e) { if(!res.headersSent) json(res,{ok:false,error:e.message},400); else res.end(); }
 });
 try {

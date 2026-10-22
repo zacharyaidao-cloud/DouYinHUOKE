@@ -814,6 +814,6 @@ test('无操作自动退出登录：设置可选一直保持登录，只改这�
   assert.equal(store.normalizeSettings({}).session.idleLogoutMinutes, 10);
   const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
   assert.match(source, /return minutes === 0 \? Infinity/);
-  assert.match(source, /sessionOnly=Object\.keys\(body\)\.length===1&&body\.session/);
+  assert.ok(source.includes("sessionOnly=Object.keys(body).length>0&&Object.keys(body).every(k=>['session','chat'].includes(k)"), '只改登录保持 / 私信设置时任务中也可保存');
   assert.match(source, /if\(body\.session\) for\(const item of sessions\.values\(\)\) item\.exp=Date\.now\(\)\+sessionTtlMs\(\);/);
 });

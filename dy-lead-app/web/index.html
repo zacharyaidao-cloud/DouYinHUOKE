@@ -388,8 +388,9 @@
       <div class="chat-shell">
         <div class="chat-top">
           <div class="chat-title"><h2>私信消息</h2><p>各账号私信在这里统一收发；账号保持在线时新消息实时到达。我们私信过的线索回复后自动标记“已回复”，不再被重复私信。</p></div>
-          <div class="chat-top-actions"><span id="chat-sync" class="chat-sync off">未连接</span><button id="btn-chat-connect-all" class="primary">连接全部账号</button><button id="btn-chat-disconnect-all" class="normal">全部断开</button></div>
+          <div class="chat-top-actions"><span id="chat-sync" class="chat-sync off">未连接</span><label class="chat-auto" title="软件登录后，自动把已登录的账号连上私信实时同步"><input type="checkbox" id="chat-auto-connect"> 登录后自动连接</label><button id="btn-chat-connect-all" class="primary">连接全部账号</button><button id="btn-chat-disconnect-all" class="normal">全部断开</button></div>
         </div>
+        <div id="chat-conn" class="chat-conn" aria-label="各账号连接状态"></div>
         <div id="chat-tabs" class="chat-tabs" role="tablist"></div>
         <div class="chat-body">
           <aside class="chat-side">
@@ -399,7 +400,7 @@
           <section class="chat-main" aria-live="polite">
             <div id="chat-empty" class="chat-empty">选择左侧会话开始聊天</div>
             <div id="chat-pane" class="chat-pane hidden">
-              <header class="chat-head"><div id="chat-head-avatar" class="chat-avatar"></div><div class="chat-head-info"><div id="chat-head-name" class="chat-head-name"></div><div id="chat-head-sub" class="chat-head-sub"></div></div><div id="chat-head-status" class="chat-head-status"></div></header>
+              <header class="chat-head"><div id="chat-head-avatar" class="chat-avatar"></div><div class="chat-head-info"><div id="chat-head-name" class="chat-head-name"></div><div id="chat-head-sub" class="chat-head-sub"></div></div><div class="chat-head-actions"><button id="btn-chat-profile" class="normal" title="在该账号的浏览器里打开对方主页">主页</button><button id="btn-chat-dm" class="normal" title="在该账号的浏览器里打开和对方的抖音私信">消息</button></div><div id="chat-head-status" class="chat-head-status"></div></header>
               <div id="chat-messages" class="chat-messages"></div>
               <footer class="chat-compose">
                 <textarea id="chat-input" rows="3" placeholder="输入消息，Enter 发送，Shift + Enter 换行" aria-label="输入消息"></textarea>

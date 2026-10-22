@@ -607,6 +607,28 @@ body.browser-workspace .content { padding-bottom:16px; }
 .chat-meta { font-size:11px; color:#a0a7b4; margin-top:3px; }
 .chat-meta.failed { color:#e4572e; }
 .chat-system { text-align:center; margin:8px auto; max-width:70%; font-size:12px; color:#a0a7b4; }
+.chat-sync, .chat-auto { white-space:nowrap; }
+.chat-auto { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:#5c6475; }
+.chat-conn { display:flex; flex-wrap:wrap; gap:8px; padding:4px 20px 10px; }
+.chat-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 6px 4px 10px; border:1px solid #e5e8ef; border-radius:16px; font-size:12px; background:#fafbfc; max-width:100%; }
+.chat-chip b { font-weight:600; color:#1d2129; }
+.chat-chip .chat-chip-state { color:#7a8294; }
+.chat-chip.error { border-color:#f7c4b8; background:#fff6f3; }
+.chat-chip.error .chat-chip-state { color:#c2410c; }
+.chat-chip.online .chat-chip-state { color:#1f9d55; }
+.chat-conn .chat-chip button { padding:2px 10px; min-height:0; height:24px; font-size:12px; line-height:18px; border-radius:12px; }
+.chat-top-actions { flex-wrap:nowrap; }
+.chat-top-actions button { padding:6px 14px; font-size:13px; white-space:nowrap; }
+.chat-title { min-width:0; }
+.chat-chip-reason { color:#c2410c; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.chat-head-actions { display:flex; gap:6px; }
+.chat-head-actions button { padding:4px 10px; font-size:12px; }
+.chat-media { display:block; max-width:220px; max-height:260px; border-radius:8px; }
+.chat-media.sticker { max-width:120px; max-height:120px; }
+.chat-bubble.media { padding:4px; background:transparent !important; box-shadow:none; }
+.chat-emoji { font-size:1.15em; }
+.acc-note-edit { display:flex; gap:4px; margin-top:4px; }
+.acc-note-edit input { flex:1; min-width:120px; padding:3px 6px; }
 .chat-compose { background:#fff; border-top:1px solid #eceff4; padding:10px 16px; }
 .chat-compose textarea { width:100%; box-sizing:border-box; border:1px solid #dfe3ea; border-radius:8px; padding:8px 10px; resize:none; font:inherit; }
 .chat-compose-bar { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }

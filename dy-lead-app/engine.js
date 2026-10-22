@@ -1129,7 +1129,9 @@ const { inboxTask } = createInboxTasks({ store, taskState, setTask, failTask, au
   closeAccount: id => closeAccount(id), refreshLeadStatus });
 // 私信实时同步：每个连接的账号一个后台私信页，收推送、打开会话、在软件里回复
 const { createChatRuntime } = require('./engine-chat');
-const chat = createChatRuntime({ store, authorize, getAlive, launchAccount, closeAccount: id => closeAccount(id), refreshLeadStatus });
+const chat = createChatRuntime({ store, authorize, getAlive, launchAccount, closeAccount: id => closeAccount(id), refreshLeadStatus,
+  isAccountBusy: id => (taskState.running && String(taskState.accountId || '') === String(id)) || taskState.distributionActive === true,
+  accountMode: id => { const acc = store.getAccounts().find(a => String(a.id) === String(id)); return acc && acc.browserMode === 'embedded' ? 'embedded' : 'external'; } });
 
 /* ===================== AI：同规则、固定范围、安全回写 ===================== */
 const { createAiTasks } = require('./engine-ai-tasks');

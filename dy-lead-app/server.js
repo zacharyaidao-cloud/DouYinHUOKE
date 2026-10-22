@@ -16,7 +16,13 @@ const { createBrowserControlLease } = require('./lib/browser-control-lease');
 const PORT = Number(process.env.DY_LEAD_PORT ?? 17888);
 const WEB_DIR = path.join(__dirname, 'web');
 const DESKTOP_TOKEN = process.env.DY_LEAD_DESKTOP_TOKEN || '';
-const SESSION_TTL_MS = Number(process.env.DY_LEAD_SESSION_TTL_MS || 600000);
+// 无操作多少时间后需要重新登录：环境变量优先（测试用），否则读设置 session.idleLogoutMinutes（0 = 一直保持登录）
+function sessionTtlMs() {
+  if (process.env.DY_LEAD_SESSION_TTL_MS) return Number(process.env.DY_LEAD_SESSION_TTL_MS);
+  let minutes = 10;
+  try { minutes = Number(store.getSettings().session.idleLogoutMinutes); } catch (_) { minutes = 10; }
+  return minutes === 0 ? Infinity : (Number.isFinite(minutes) && minutes > 0 ? minutes : 10) * 60000;
+}
 const sessions = new Map();
 const aiAssistRequests = new Map();
 let taskContext = null;
@@ -55,7 +61,7 @@ function getSession(req, active=true) {
   const session=sessions.get(token);
   if (!session) return null;
   if (active && !isSessionValid(session)) return null;
-  if (active && req.headers['x-user-active']==='1') session.exp=Date.now()+SESSION_TTL_MS;
+  if (active && req.headers['x-user-active']==='1') session.exp=Date.now()+sessionTtlMs();
   return {token,session};
 }
 function isSessionValid(session) {
@@ -67,7 +73,7 @@ function holdSessionForWork(session) {
   session.workCount=(session.workCount||0)+1;
   return () => {
     session.workCount--;
-    session.exp=Date.now()+SESSION_TTL_MS;
+    session.exp=Date.now()+sessionTtlMs();
   };
 }
 engine.configure({ authorize: async meta => {
@@ -144,6 +150,7 @@ function validateSettings(s) {
   if(typeof s.collect.autoAiAfterCollect!=='boolean') throw new Error('采集后自动AI判断必须为开关值');
   const autoJudgeWindowDays = s.ai.autoJudgeWindowDays == null ? 7 : Number(s.ai.autoJudgeWindowDays);
   if(![0,1,3,7].includes(autoJudgeWindowDays)) throw new Error('采集后自动AI判断的评论时间范围只允许全部、1天、3天或7天');
+  if(s.session&&![0,10,30,60,240].includes(Number(s.session.idleLogoutMinutes))) throw new Error('无操作自动退出登录只能选择 10/30/60/240 分钟或一直保持登录');
   if(s.action.pacingVersion!==1) throw new Error('请刷新后使用新版任务节奏设置');
   if(!Number.isFinite(s.dm.repeat.intervalDays)||s.dm.repeat.intervalDays<1) throw new Error('重复私信间隔至少为1天');
   const sp={count:5,pauseMinSec:300,pauseMaxSec:300,...(s.dm&&s.dm.sessionPause||{})};
@@ -245,7 +252,7 @@ async function handleApi(req,res,pathname) {
     const body=await readBody(req); const r=await license.verify(body.username,body.password);
     if(!r.ok||!r.authContext) return json(res,{ok:false,error:r.error||'授权验证失败'},401);
     const token=crypto.randomBytes(24).toString('hex');
-    const session={exp:Date.now()+SESSION_TTL_MS,username:r.username,role:'user',authContext:r.authContext};
+    const session={exp:Date.now()+sessionTtlMs(),username:r.username,role:'user',authContext:r.authContext};
     sessions.set(token,session);
     startupLoginScan.request(session, options => engine.scanAccountLogins(options));
     return json(res,{ok:true,token,role:'user',username:r.username,expiresAt:r.expiresAt,offline:!!r.offline,mac:r.mac});
@@ -278,7 +285,9 @@ async function handleApi(req,res,pathname) {
   if(method==='PUT'&&pathname==='/api/settings') {
     const body=await readBody(req); if(body.license) return json(res,{ok:false,error:'授权配置由发行方固定，客户版不可修改'},403);
     if(body.ai&&Object.hasOwn(body.ai,'baseUrl')&&body.ai.baseUrl!=='https://api.deepseek.com') return json(res,{ok:false,error:'AI接口固定使用DeepSeek官方HTTPS地址'},400);
-    if((engineBusy()||taskPending)&&!loginSessionOnly()) return json(res,{ok:false,error:'请停止任务后修改规则与执行设置'},409);
+    // 只改“无操作自动退出登录”不影响任务，任务运行中也允许保存
+    const sessionOnly=Object.keys(body).length===1&&body.session&&typeof body.session==='object';
+    if((engineBusy()||taskPending)&&!loginSessionOnly()&&!sessionOnly) return json(res,{ok:false,error:'请停止任务后修改规则与执行设置'},409);
     const current=store.getSettings();
     for(const k of Object.keys(body)) if(k!=='license'&&Object.hasOwn(current,k)&&body[k]&&typeof body[k]==='object'&&!Array.isArray(body[k])) current[k]={...current[k],...body[k]};
     current.dm.repeat={...store.getSettings().dm.repeat,...(body.dm?.repeat||{})};
@@ -287,7 +296,10 @@ async function handleApi(req,res,pathname) {
     delete current.ai.apiKeySet;
     try { validateSettings(current); } catch(e) { return json(res,{ok:false,error:e.message},400); }
     const active=current.ai.promptPresets.find(p=>p.id===current.ai.activePromptId); current.ai.prompt=active.prompt;
-    store.setSettings(current); return json(res,{ok:true});
+    store.setSettings(current);
+    // 新的登录保持时长立即作用于当前已登录的会话
+    if(body.session) for(const item of sessions.values()) item.exp=Date.now()+sessionTtlMs();
+    return json(res,{ok:true});
   }
   if(parts[1]==='accounts') {
     if(method==='POST'&&parts.length===2) {

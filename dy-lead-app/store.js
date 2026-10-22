@@ -142,6 +142,8 @@ const DEFAULT_SETTINGS = {
   human: {
     timeZone: 'Asia/Shanghai', maxConsecutiveErrors: 3
   },
+  // 软件登录：无操作多少分钟后需要重新登录（0 = 一直保持登录，软件开着就不退出；授权到期照常失效）
+  session: { idleLogoutMinutes: 10 },
   outreach: { businessId: 'default' },
   ai: {
     enabled: true,
@@ -173,6 +175,7 @@ function setAccounts(list) { writeJson(F.accounts, list); }
 function getLeads() { return readJson(F.leads, []); }
 function setLeads(list) { writeJson(F.leads, list); }
 
+const IDLE_LOGOUT_CHOICES = [0, 10, 30, 60, 240];
 function normalizeSettings(s = {}) {
   const merged = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   for (const k of Object.keys(merged)) {
@@ -219,6 +222,8 @@ function normalizeSettings(s = {}) {
   delete merged.follow.intervalMinSec; delete merged.follow.intervalMaxSec;
   delete merged.dm.intervalMinSec; delete merged.dm.intervalMaxSec;
   merged.human = { timeZone: merged.human.timeZone, maxConsecutiveErrors: merged.human.maxConsecutiveErrors };
+  const idle = Number(merged.session && merged.session.idleLogoutMinutes);
+  merged.session = { idleLogoutMinutes: IDLE_LOGOUT_CHOICES.includes(idle) ? idle : DEFAULT_SETTINGS.session.idleLogoutMinutes };
   delete merged.ai.intervalSec; delete merged.ai.intervalJitter;
   const oldAI = s.ai || {};
   merged.ai.batchMode = oldAI.batchMode === 'manual' ? 'manual' : 'auto';

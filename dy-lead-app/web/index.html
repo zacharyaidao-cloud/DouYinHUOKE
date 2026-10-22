@@ -298,6 +298,8 @@
           <div><dt>本机数据目录</dt><dd id="lic-datadir">—</dd></div>
         </dl>
         <div class="note">账户授权通过 HTTPS 校验；每次对外操作前检查授权。授权失效后暂停任务，停止按钮始终可用。</div>
+        <div class="row"><label for="s-idle-logout">无操作自动退出登录</label><select id="s-idle-logout"><option value="10">10 分钟</option><option value="30">30 分钟</option><option value="60">1 小时</option><option value="240">4 小时</option><option value="0">一直保持登录（不退出）</option></select><button id="btn-save-idle" class="normal">保存</button><span id="idle-saved" class="ok-hint" role="status"></span></div>
+        <div class="note">软件登录后多长时间没有点击或输入就需要重新登录；后台任务运行期间不会退出。选“一直保持登录”时，软件开着就保持登录，授权到期仍会失效。</div>
         <div id="lic-user-box" class="hidden" style="margin-top:12px">
           <h4>修改授权账户密码</h4>
           <div class="row">

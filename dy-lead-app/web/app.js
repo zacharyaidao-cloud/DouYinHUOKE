@@ -2050,8 +2050,18 @@ $('btn-lu-change').addEventListener('click', async () => {
   setTimeout(() => { $('lu-msg').textContent = ''; }, 3000);
 });
 
+$('btn-save-idle').addEventListener('click', async () => {
+  const idleLogoutMinutes = Number($('s-idle-logout').value);
+  try {
+    await api('/settings', { method: 'PUT', body: { session: { idleLogoutMinutes } } });
+    state.settings.session = { idleLogoutMinutes };
+    $('idle-saved').textContent = idleLogoutMinutes === 0 ? '已保存：一直保持登录' : `已保存：${idleLogoutMinutes >= 60 ? idleLogoutMinutes / 60 + ' 小时' : idleLogoutMinutes + ' 分钟'}无操作后退出`;
+  } catch (error) { $('idle-saved').textContent = '未保存：' + (error.message || ''); }
+  setTimeout(() => { $('idle-saved').textContent = ''; }, 5000);
+});
 async function loadSettingsForm() {
   const s = state.settings;
+  if (s && s.session) $('s-idle-logout').value = String(s.session.idleLogoutMinutes ?? 10);
   if (state.license) {
     $('lic-mac').textContent = state.license.mac || '-';
     $('lic-datadir').textContent = state.dataDir || '-';

@@ -805,3 +805,15 @@ test('自动与手动AI组批明确保存，非法模式拒绝且不覆盖既有
   assert.equal(f.settings().ai.batchMode,'auto');assert.equal(f.settings().ai.batchMaxChars,3210);assert.equal(f.settings().ai.batchMaxCount,7);
   assert.equal(f.settings().ai.apiKey,original.apiKey);assert.deepEqual(f.settings().ai.promptPresets,original.promptPresets);
 });
+
+test('无操作自动退出登录：设置可选一直保持登录，只改这一项时任务运行中也能保存；非法值拒绝', () => {
+  const store = require('../store');
+  const normalized = store.normalizeSettings({ session: { idleLogoutMinutes: 0 } });
+  assert.equal(normalized.session.idleLogoutMinutes, 0);
+  assert.equal(store.normalizeSettings({ session: { idleLogoutMinutes: 7 } }).session.idleLogoutMinutes, 10, '非法值回到默认 10 分钟');
+  assert.equal(store.normalizeSettings({}).session.idleLogoutMinutes, 10);
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(source, /return minutes === 0 \? Infinity/);
+  assert.match(source, /sessionOnly=Object\.keys\(body\)\.length===1&&body\.session/);
+  assert.match(source, /if\(body\.session\) for\(const item of sessions\.values\(\)\) item\.exp=Date\.now\(\)\+sessionTtlMs\(\);/);
+});
